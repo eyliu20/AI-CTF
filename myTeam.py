@@ -14,30 +14,15 @@
 
 from captureAgents import CaptureAgent
 import random, time, util, math
-from game import os
+from game import *
 import game
 
 #################
 # Team creation #
 #################
-class Agent:
-    """
-    An agent must define a getAction method, but may also define the
-    following methods which will be called if they exist:
 
-    def registerInitialState(self, state): # inspects the starting state
-    """
-    def __init__(self, index=0):
-        self.index = index
-
-    def getAction1(self, state):
-        """
-        The Agent will receive a GameState (from either {pacman, capture, sonar}.py) and
-        must return an action from Directions.{North, South, East, West, Stop}
-        """
-        raiseNotDefined()
 def createTeam(firstIndex, secondIndex, isRed,
-                             first = 'QCTFAgent', second = 'QCTFAgent'):
+                             first = 'DummyAgent', second = 'DummyAgent'):
     """
     This function should return a list of two agents that will form the
     team, initialized using firstIndex and secondIndex as their agent
@@ -52,7 +37,7 @@ def createTeam(firstIndex, secondIndex, isRed,
     any extra arguments, so you should make sure that the default
     behavior is what you want for the nightly contest.
     """
-
+    #self.isRed = isRed
     # The following line is an example only; feel free to change it.
     return [eval(first)(firstIndex), eval(second)(secondIndex)]
 
@@ -104,17 +89,130 @@ class DummyAgent(CaptureAgent):
         '''
 
         return random.choice(actions)
+class QCTFAgent(ApproximateQAgent):
+enemy1FoodHolding = 0
+enemy2FoodHolding = 0
 
 
+    def registerInitialState(self, gameState):
+        CaptureAgent.registerInitialState(self, gameState)
+        distances = distanceCalculator.Distancer()
+        distances.getMazeDistances()
+        self.foodHolding = 0
+        self.enemy1FoodHolding = 0
+        
+    def chooseAction(self, gameState):
+        #calculate food holdings
+        originalState = state
+        nextState = state.generateSuccessor(index, chosenAction)
+        dFood = thisAgent.getFood(originalState) - thisAgent.getFood(nextState)
+        self.foodHolding += dFood
+        if distanceToLine(self.index, nextState) < 0:
+            self.foodHolding = 0
+        
 
 
-
-
-
-
-
-
-
+class CTFExtractor(FeatureExtractor):
+    """
+    returns features:
+    
+    """
+    def getFeatures(self, state, action, thisAgent):
+    
+        features = util.Counter()
+    
+        #info gathering
+        food = state.getFood()
+        walls = state.getWalls()
+        halfway = state.data.layout.width/2
+        index = thisAgent.index
+        myPosition = state.getAgentPosition(index)
+        distanceToLine = myPosition[0] - halfway
+        score = thisAgent.getScore()
+        timeLeft = state.data.timeLeft
+        # compute the location of pacman after he takes the action
+        x, y = state.getPacmanPosition()
+        dx, dy = Actions.directionToVector(action)
+        next_x, next_y = int(x + dx), int(y + dy)
+        
+        
+        #team specific- move to init?
+        if self.isRed:
+            myFood = state.getRedFood()
+            enemyFood = state.getBlueFood()
+            myCapsules = state.getRedCapsules()
+            enemyCapsules = state.getBlueCapsules()
+            enemies = state.getBlueTeamIndices()
+            myTeam = state.getRedTeamIndices()
+        else: #on blue
+            myFood = state.getBlueFood()
+            enemyFood = state.RedFood()
+            myCapsules = state.getBlueCapsules()
+            enemyCapsules = state.getRedCapsules()
+            enemies = state.getRedTeamIndices()
+            myTeam = state.getBlueTeamIndices()
+            distanceToLine *= -1
+            
+        if myTeam[0] == index:
+            teammateIndex = myTeam[1]
+        else:
+            teammateIndex = myTeam[0]
+            
+        teammatePosition = state.getAgentPosition(teammateIndex)
+        teammateD2L = distanceToLine(teammateIndex, state)
+        features["teammate-distance-to-line"] = teammateD2L
+        d2t = distances.getDistance(myPosition, teammatePosition)
+        features["distance-to-teammate"] = d2t
+            
+            
+        enemy1Position = state.getAgentPosition(enemies[0])
+        if enemy1Position not None:
+            enemy1DistanceToLine = distanceToLine(enemies[0], state) #gives manhat distance to line and ghost/pacman in the form of +/-
+            features["enemy1-distance-to-line"] = enemy1DistanceToLine
+            d2e1 = distances.getDistance(myPosition, enemy1Position)
+            features["distance-to-enemy1"] = d2e1
+            td2e1 = distances.getDistance(teammatePosition, enemy1Position)
+            features["td2e1"] = td2e1
+        
+        
+        enemy2Position = state.getAgentPosition(enemies[1])
+        if enemy2Position not None:
+            enemy2DistanceToLine = distanceToLine(enemies[1], state)
+            features["enemy2-distance-to-line"] = enemy2DistanceToLine
+            d2e2 = distances.getDistance(myPosition, enemy2Position)
+            features["distance-to-enemy2"] = d2e2
+            td2e2 = distances.getDistance(teammatePosition, enemy2Position)
+            features["td2e2"] = td2e2
+            
+       
+        
+        #food logic- distance to nearest food
+        dist = closestFood((next_x, next_y), food, walls)
+        if dist is not None:
+            # make the distance a number less than one otherwise the update
+            # will diverge wildly
+            features["closest-food"] = float(dist) / (walls.width * walls.height)
+        #food logic- amount of food carrying
+        foodHolding = self.foodHolding
+        features["food-holding"] = foodHolding
+        
+        
+        
+        
+        #assign to features
+        features["distance-to-line"] = distanceToLine
+        
+        
+        
+        
+    def distanceToLine(agentIndex, state):
+        #returns the manhattan distance to the line. Positive if on enemy side, negative if on home side
+        halfway = state.data.layout.width/2
+        
+        dist = state.getAgentPosition(agentIndex)
+        if not state.isOnRedTeam(agentIndex):
+            dist *= -1
+        return dist
 
 
 
@@ -181,7 +279,7 @@ class ValueEstimationAgent(Agent):
         """
         util.raiseNotDefined()
 
-    def getAction1(self, state):
+    def getAction(self, state):
         """
         state: can call state.getLegalActions()
         Choose an action and return it.
@@ -197,16 +295,16 @@ class ReinforcementAgent(ValueEstimationAgent):
         What you need to know:
                     - The environment will call
                       observeTransition(state,action,nextState,deltaReward),
-                      which will call update1(state, action, nextState, deltaReward)
+                      which will call update(state, action, nextState, deltaReward)
                       which you should override.
-        - Use state.getLegalActions(state) to know which actions
+        - Use self.getLegalActions(state) to know which actions
                       are available in a state
     """
     ####################################
     #    Override These Functions      #
     ####################################
 
-    def update1(self, state, action, nextState, reward):
+    def update(self, state, action, nextState, reward):
         """
                 This class will call this function, which you write, after
                 observing a transition and reward
@@ -234,7 +332,7 @@ class ReinforcementAgent(ValueEstimationAgent):
             NOTE: Do *not* override or call this function
         """
         self.episodeRewards += deltaReward
-        self.update1(state,action,nextState,deltaReward)
+        self.update(state,action,nextState,deltaReward)
 
     def startEpisode(self):
         """
@@ -296,7 +394,6 @@ class ReinforcementAgent(ValueEstimationAgent):
     def setDiscount(self, discount):
         self.discount = discount
 
-################################################################################################################################ Eric Changed Stuff Below
     def doAction(self,state,action):
         """
             Called by inherited class when
@@ -378,7 +475,7 @@ class QLearningAgent(ReinforcementAgent):
         - self.discount (discount rate)
 
       Functions you should use
-        - state.getLegalActions(state)
+        - self.getLegalActions(state)
           which returns legal actions for a state
     """
     def __init__(self, **args):
@@ -413,8 +510,7 @@ class QLearningAgent(ReinforcementAgent):
         """
         "*** YOUR CODE HERE ***"
         valueList = []
-        ############################################################################################################ Eric Changed state to self.index
-        for a in state.getLegalActions(self.index):
+        for a in self.getLegalActions(state):
             valueList.append(self.getQValue(state, a))
         if len(valueList) == 0:
             return 0.0
@@ -430,9 +526,7 @@ class QLearningAgent(ReinforcementAgent):
           you should return None.
         """
         "*** YOUR CODE HERE ***"
-                ############################################################################################################ Eric Changed state to self.index
-
-        legalActions = state.getLegalActions(self.index)
+        legalActions = self.getLegalActions(state)
         if len(legalActions) == 0:
             return None
         maxValue = -99999
@@ -449,7 +543,7 @@ class QLearningAgent(ReinforcementAgent):
         return maxAction
         util.raiseNotDefined()
 
-    def getAction1(self, state):
+    def getAction(self, state):
         """
           Compute the action to take in the current state.  With
           probability self.epsilon, we should take a random action and
@@ -461,9 +555,7 @@ class QLearningAgent(ReinforcementAgent):
           HINT: To pick randomly from a list, use random.choice(list)
         """
         # Pick Action
-                ############################################################################################################ Eric Changed state to self.index
-
-        legalActions = state.getLegalActions(self.index)
+        legalActions = self.getLegalActions(state)
         action = None
         "*** YOUR CODE HERE ***"
         if len(legalActions) == 0:
@@ -478,7 +570,7 @@ class QLearningAgent(ReinforcementAgent):
 
         return self.computeActionFromQValues(state)
 
-    def update1(self, state, action, nextState, reward):
+    def update(self, state, action, nextState, reward):
         """
           The parent class calls this to observe a
           state = action => nextState and reward transition.
@@ -488,13 +580,11 @@ class QLearningAgent(ReinforcementAgent):
           it will be called on your behalf
         """
         "*** YOUR CODE HERE ***"
-                ############################################################################################################ Eric Changed nextState to other stuff
-        
-        actionList = nextState.getLegalActions(self.index)
+        actionList = self.getLegalActions(nextState)
 
         if (not (nextState == None)) and len(actionList) > 0 :
             expectedRewardList = []
-            #print "state ",nextState," has legal actions ", state.getLegalActions(nextState)
+            #print "state ",nextState," has legal actions ", self.getLegalActions(nextState)
             for a in actionList:
                 #print "next state: ",nextState," action: ",a, "Value: ", self.Q[(nextState, a)]
                 expectedRewardList.append(self.Q[(nextState, a)])
@@ -538,15 +628,13 @@ class PacmanQAgent(QLearningAgent):
         self.index = 0  # This is always Pacman
         QLearningAgent.__init__(self, **args)
 
-    def getAction1(self, state):
+    def getAction(self, state):
         """
         Simply calls the getAction method of QLearningAgent and then
         informs parent of action for Pacman.  Do not change or remove this
         method.
         """
-        action = QLearningAgent.getAction1(self,state)
-################################################################################################################################ Eric Changed Stuff Below
-
+        action = QLearningAgent.getAction(self,state)
         self.doAction(state,action)
         return action
 
@@ -560,10 +648,6 @@ class ApproximateQAgent(PacmanQAgent):
        should work as is.
     """
     def __init__(self, extractor='IdentityExtractor', **args):
-        extractor = 'IdentityExtractor'
-        #########################
-        #print "what is the extractor name: ", extractor
-        ############################
         self.featExtractor = util.lookup(extractor, globals())()
         PacmanQAgent.__init__(self, **args)
         self.weights = util.Counter()
@@ -572,7 +656,6 @@ class ApproximateQAgent(PacmanQAgent):
         return self.weights
 
     def getQValue(self, state, action):
-        print "getQValue in ApproximateQAgent"
         """
           Should return Q(state,action) = w * featureVector
           where * is the dotProduct operator
@@ -587,21 +670,12 @@ class ApproximateQAgent(PacmanQAgent):
         return value
         #util.raiseNotDefined()
 
-    def update1(self, state, action, nextState, reward):
+    def update(self, state, action, nextState, reward):
         """
            Should update your weights based on transition
         """
-        print "update1 in ApproximateQAgent"
         "*** YOUR CODE HERE ***"
-        ##################################################################################################################################Eric Did Stuff
-        actionList = nextState.getLegalActions(self.index)
-
-
-        print "Action List", actionList
-
-
-
-
+        actionList = self.getLegalActions(nextState)
         weights = self.getWeights()
         features = self.featExtractor.getFeatures(state, action)
 
@@ -677,6 +751,12 @@ def closestFood(pos, food, walls):
     return None
 
 class SimpleExtractor(FeatureExtractor):
+
+
+
+
+
+
     """
     Returns simple features for a basic reflex Pacman:
     - whether food will be eaten
@@ -686,7 +766,6 @@ class SimpleExtractor(FeatureExtractor):
     """
 
     def getFeatures(self, state, action):
-
         # extract the grid of food and wall locations and get the ghost locations
         food = state.getFood()
         walls = state.getWalls()
@@ -715,56 +794,309 @@ class SimpleExtractor(FeatureExtractor):
             features["closest-food"] = float(dist) / (walls.width * walls.height)
         features.divideAll(10.0)
         return features
+        
+#RUU section
+class InferenceModule:
+    """
+    An inference module tracks a belief distribution over a ghost's location.
+    This is an abstract class, which you should not modify.
+    """
+
+    ############################################
+    # Useful methods for all inference modules #
+    ############################################
+
+    def __init__(self, ghostAgent):
+        "Sets the ghost agent for later access"
+        self.ghostAgent = ghostAgent
+        self.index = ghostAgent.index
+        self.obs = [] # most recent observation position
+
+    def getJailPosition(self):
+        return (2 * self.ghostAgent.index - 1, 1)
+
+    def getPositionDistribution(self, gameState):
+        """
+        Returns a distribution over successor positions of the ghost from the
+        given gameState.
+
+        You must first place the ghost in the gameState, using setGhostPosition
+        below.
+        """
+        ghostPosition = gameState.getGhostPosition(self.index) # The position you set
+        actionDist = self.ghostAgent.getDistribution(gameState)
+        dist = util.Counter()
+        for action, prob in actionDist.items():
+            successorPosition = game.Actions.getSuccessor(ghostPosition, action)
+            dist[successorPosition] = prob
+        return dist
+
+    def setGhostPosition(self, gameState, ghostPosition):
+        """
+        Sets the position of the ghost for this inference module to the
+        specified position in the supplied gameState.
+
+        Note that calling setGhostPosition does not change the position of the
+        ghost in the GameState object used for tracking the true progression of
+        the game.  The code in inference.py only ever receives a deep copy of
+        the GameState object which is responsible for maintaining game state,
+        not a reference to the original object.  Note also that the ghost
+        distance observations are stored at the time the GameState object is
+        created, so changing the position of the ghost will not affect the
+        functioning of observeState.
+        """
+        conf = game.Configuration(ghostPosition, game.Directions.STOP)
+        gameState.data.agentStates[self.index] = game.AgentState(conf, False)
+        return gameState
+
+    def observeState(self, gameState):
+        "Collects the relevant noisy distance observation and pass it along."
+        distances = gameState.getNoisyGhostDistances()
+        if len(distances) >= self.index: # Check for missing observations
+            obs = distances[self.index - 1]
+            self.obs = obs
+            self.observe(obs, gameState)
+
+    def initialize(self, gameState):
+        "Initializes beliefs to a uniform distribution over all positions."
+        # The legal positions do not include the ghost prison cells in the bottom left.
+        self.legalPositions = [p for p in gameState.getWalls().asList(False) if p[1] > 1]
+        self.initializeUniformly(gameState)
+
+    ######################################
+    # Methods that need to be overridden #
+    ######################################
+
+    def initializeUniformly(self, gameState):
+        "Sets the belief state to a uniform prior belief over all positions."
+        pass
+
+    def observe(self, observation, gameState):
+        "Updates beliefs based on the given distance observation and gameState."
+        pass
+
+    def elapseTime(self, gameState):
+        "Updates beliefs for a time step elapsing from a gameState."
+        pass
+
+    def getBeliefDistribution(self):
+        """
+        Returns the agent's current belief state, a distribution over ghost
+        locations conditioned on all evidence so far.
+        """
+        pass
+
+        
+class ParticleFilter(InferenceModule):
+    """
+    A particle filter for approximately tracking a single ghost.
+
+    Useful helper functions will include random.choice, which chooses an element
+    from a list uniformly at random, and util.sample, which samples a key from a
+    Counter by treating its values as probabilities.
+    """
+
+    def __init__(self, ghostAgent, numParticles=300):
+        InferenceModule.__init__(self, ghostAgent);
+        self.setNumParticles(numParticles)
+
+    def setNumParticles(self, numParticles):
+        self.numParticles = numParticles
 
 
+    def initializeUniformly(self, gameState):
+        """
+        Initializes a list of particles. Use self.numParticles for the number of
+        particles. Use self.legalPositions for the legal board positions where a
+        particle could be located.  Particles should be evenly (not randomly)
+        distributed across positions in order to ensure a uniform prior.
 
+        Note: the variable you store your particles in must be a list; a list is
+        simply a collection of unweighted variables (positions in this case).
+        Storing your particles as a Counter (where there could be an associated
+        weight with each position) is incorrect and may produce errors.
+        """
+        "*** YOUR CODE HERE ***"
+        #this works I think, but I don't have a way to test. Try it out on paper if you want.
+        numPositions = len(self.legalPositions)
+        #print "legal positions: ",self.legalPositions
+        #print "numPositions: ", numPositions
+        step = (numPositions % self.numParticles) - 1
+        particleList = [None]*self.numParticles #poor attempt at optimization
+        last = step * -1 #ensures start at 0
+        #print "step: ",step
+        
+        for p in range (0, self.numParticles):
+            #print "last: ",last
+            
+            new = last + step
+            #print "new: ", new
+            last = new
+            
+            particleList[p] = (self.legalPositions[new % numPositions])
+            
+        
+        self.particles = particleList
+        #print "Initial distribution: ", particleList
+        return particleList
 
+    def observe(self, observation, gameState):
+        """
+        Update beliefs based on the given distance observation. Make sure to
+        handle the special case where all particles have weight 0 after
+        reweighting based on observation. If this happens, resample particles
+        uniformly at random from the set of legal positions
+        (self.legalPositions).
 
-class QCTFAgent(CaptureAgent, ApproximateQAgent):
+        A correct implementation will handle two special cases:
+          1) When a ghost is captured by Pacman, all particles should be updated
+             so that the ghost appears in its prison cell,
+             self.getJailPosition()
+
+             As before, you can check if a ghost has been captured by Pacman by
+             checking if it has a noisyDistance of None.
+
+          2) When all particles receive 0 weight, they should be recreated from
+             the prior distribution by calling initializeUniformly. The total
+             weight for a belief distribution can be found by calling totalCount
+             on a Counter object
+
+        util.sample(Counter object) is a helper method to generate a sample from
+        a belief distribution.
+
+        You may also want to use util.manhattanDistance to calculate the
+        distance between a particle and Pacman's position.
+        """
+        noisyDistance = observation
+        emissionModel = busters.getObservationDistribution(noisyDistance)
+        pacmanPosition = gameState.getPacmanPosition()
+        "*** YOUR CODE HERE ***"
+        s = [None]*self.numParticles
+        #print "got observation: ", noisyDistance
+        #Special Case #1: Pacman eats the ghost
+        if noisyDistance == None:
+            for i in range(0, self.numParticles):
+                s[i] = self.getJailPosition()
+            self.particles = s
+            return s
+        
+        
+        #update the beliefs. This step is taking 5ever
+        #print "Updating belief distribution"
+        beliefs = util.Counter()
+        beliefDistribution = self.getBeliefDistribution()
+        for p in self.particles:
+            
+            weight = emissionModel[util.manhattanDistance(p, pacmanPosition)] * beliefDistribution[p]
+            beliefs[p] = weight
+            #print "given ",p," weight ", weight
+            #beliefs.normalize()
+        
+        #Special Case #2: All particles have 0 weight
+        if beliefs.totalCount() == 0:
+            #print "SPECIAL CASE 2 TRIGGERED"
+             #get the prior distribution. 
+            priorDistribution = util.Counter()
+            for p in self.initializeUniformly(gameState):
+                priorDistribution[p] = 1
+            beliefs = priorDistribution.normalize()
+        
+        #sample from new distribution
+        #print "sampling from new distribution"
+        if beliefs == None:
+            #print "BELIEFS IS NULL"
+            beliefs = util.Counter()
+            for p in self.initializeUniformly(gameState):
+                beliefs[p] = 1
+            beliefs.normalize()
+        
+        #beliefs.normalize()
+        for i in range(0, self.numParticles):
+            s[i] = util.sample(beliefs)
+        
+        #update the particle list
+        self.particles = s
+        return s
+        
+        
+        util.raiseNotDefined()
+
+    def elapseTime(self, gameState):
+        """
+        Update beliefs for a time step elapsing.
+
+        As in the elapseTime method of ExactInference, you should use:
+
+          newPosDist = self.getPositionDistribution(self.setGhostPosition(gameState, oldPos))
+
+        to obtain the distribution over new positions for the ghost, given its
+        previous position (oldPos) as well as Pacman's current position.
+
+        util.sample(Counter object) is a helper method to generate a sample from
+        a belief distribution.
+        """
+        "*** YOUR CODE HERE ***"
+        newList = []
+
+        for oldPos in self.particles:
+            newPosDist = self.getPositionDistribution(self.setGhostPosition(gameState, oldPos))
+            newList.append(util.sample(newPosDist))
+
+        self.particles = newList
+        
+        #util.raiseNotDefined()
+
+    def getBeliefDistribution(self):
+        """
+        Return the agent's current belief state, a distribution over ghost
+        locations conditioned on all evidence and time passage. This method
+        essentially converts a list of particles into a belief distribution (a
+        Counter object)
+        """
+        "*** YOUR CODE HERE ***"
+        beliefs = util.Counter()
+        for p in self.particles:
+            beliefs[p] += 1
+        beliefs.normalize()
+        return beliefs
+      
+      
+class BustersAgent:
+    "An agent that tracks and displays its beliefs about ghost positions."
+
+    def __init__( self, index = 0, inference = "ExactInference", ghostAgents = None, observeEnable = True, elapseTimeEnable = True):
+        inferenceType = util.lookup(inference, globals())
+        self.inferenceModules = [inferenceType(a) for a in ghostAgents]
+        self.observeEnable = observeEnable
+        self.elapseTimeEnable = elapseTimeEnable
+
     def registerInitialState(self, gameState):
-        print "PRINT 1"
-        CaptureAgent.registerInitialState(self, gameState)
+        "Initializes beliefs and inference modules"
+        import __main__
+        self.display = __main__._display
+        for inference in self.inferenceModules:
+            inference.initialize(gameState)
+        self.ghostBeliefs = [inf.getBeliefDistribution() for inf in self.inferenceModules]
+        self.firstMove = True
 
+    def observationFunction(self, gameState):
+        "Removes the ghost states from the gameState"
+        agents = gameState.data.agentStates
+        gameState.data.agentStates = [agents[0]] + [None for i in range(1, len(agents))]
+        return gameState
 
-        ApproximateQAgent.__init__(self)
-        self.startEpisode()
-        print "PRINT 2"
-
-        fileName = "pickledWeights"
-        if not os.path.isfile(fileName):
-            #for i in range(0,20):
-                #print "404 FILE NOT FOUND ------------ ERROR ERROR ERROR ERROR ERROR ERROR ERROR "
-            self.weights = util.Counter()
-        else:
-            myFile = open(fileName, "rb")
-            unpickled = pickle.load(myFile)
-            self.weights = unpickled
-        print "PRINT 3"
-
-
-
-
-
+    def getAction(self, gameState):
+        "Updates beliefs, then chooses an action based on updated beliefs."
+        for index, inf in enumerate(self.inferenceModules):
+            if not self.firstMove and self.elapseTimeEnable:
+                inf.elapseTime(gameState)
+            self.firstMove = False
+            if self.observeEnable:
+                inf.observeState(gameState)
+            self.ghostBeliefs[index] = inf.getBeliefDistribution()
+        self.display.updateDistributions(self.ghostBeliefs)
+        return self.chooseAction(gameState)
 
     def chooseAction(self, gameState):
-        print "PRINT 4"
-        action = ApproximateQAgent.getAction1(self, gameState)
-        print "Action: ", action
-        return action
-
-
-
-
-
-
-
-
-
-
-    def final(self, gameState):
-        ApproximateQAgent.final(self, gameState)
-        self.stopEpisode()
-
-        toBePickledFile = open("testFile", "wb")
-        pickle.dump(self.weights, toBePickledFile)
-        toBePickledFile.close()
+        "By default, a BustersAgent just stops.  This should be overridden."
+        return Directions.STOP
