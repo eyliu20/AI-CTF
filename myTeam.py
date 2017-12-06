@@ -14,15 +14,30 @@
 
 from captureAgents import CaptureAgent
 import random, time, util, math
-from game import *
+from game import os
 import game
 
 #################
 # Team creation #
 #################
+class Agent:
+    """
+    An agent must define a getAction method, but may also define the
+    following methods which will be called if they exist:
 
+    def registerInitialState(self, state): # inspects the starting state
+    """
+    def __init__(self, index=0):
+        self.index = index
+
+    def getAction1(self, state):
+        """
+        The Agent will receive a GameState (from either {pacman, capture, sonar}.py) and
+        must return an action from Directions.{North, South, East, West, Stop}
+        """
+        raiseNotDefined()
 def createTeam(firstIndex, secondIndex, isRed,
-                             first = 'DummyAgent', second = 'DummyAgent'):
+                             first = 'QCTFAgent', second = 'QCTFAgent'):
     """
     This function should return a list of two agents that will form the
     team, initialized using firstIndex and secondIndex as their agent
@@ -89,10 +104,12 @@ class DummyAgent(CaptureAgent):
         '''
 
         return random.choice(actions)
-class QCTFAgent(ApproximateQAgent):
-    def registerInitialState(self, gameState):
-        CaptureAgent.registerInitialState(self, gameState)
-    def chooseAction(self, gameState):
+
+
+
+
+
+
 
 
 
@@ -164,7 +181,7 @@ class ValueEstimationAgent(Agent):
         """
         util.raiseNotDefined()
 
-    def getAction(self, state):
+    def getAction1(self, state):
         """
         state: can call state.getLegalActions()
         Choose an action and return it.
@@ -180,16 +197,16 @@ class ReinforcementAgent(ValueEstimationAgent):
         What you need to know:
                     - The environment will call
                       observeTransition(state,action,nextState,deltaReward),
-                      which will call update(state, action, nextState, deltaReward)
+                      which will call update1(state, action, nextState, deltaReward)
                       which you should override.
-        - Use self.getLegalActions(state) to know which actions
+        - Use state.getLegalActions(state) to know which actions
                       are available in a state
     """
     ####################################
     #    Override These Functions      #
     ####################################
 
-    def update(self, state, action, nextState, reward):
+    def update1(self, state, action, nextState, reward):
         """
                 This class will call this function, which you write, after
                 observing a transition and reward
@@ -217,7 +234,7 @@ class ReinforcementAgent(ValueEstimationAgent):
             NOTE: Do *not* override or call this function
         """
         self.episodeRewards += deltaReward
-        self.update(state,action,nextState,deltaReward)
+        self.update1(state,action,nextState,deltaReward)
 
     def startEpisode(self):
         """
@@ -279,6 +296,7 @@ class ReinforcementAgent(ValueEstimationAgent):
     def setDiscount(self, discount):
         self.discount = discount
 
+################################################################################################################################ Eric Changed Stuff Below
     def doAction(self,state,action):
         """
             Called by inherited class when
@@ -360,7 +378,7 @@ class QLearningAgent(ReinforcementAgent):
         - self.discount (discount rate)
 
       Functions you should use
-        - self.getLegalActions(state)
+        - state.getLegalActions(state)
           which returns legal actions for a state
     """
     def __init__(self, **args):
@@ -395,7 +413,8 @@ class QLearningAgent(ReinforcementAgent):
         """
         "*** YOUR CODE HERE ***"
         valueList = []
-        for a in self.getLegalActions(state):
+        ############################################################################################################ Eric Changed state to self.index
+        for a in state.getLegalActions(self.index):
             valueList.append(self.getQValue(state, a))
         if len(valueList) == 0:
             return 0.0
@@ -411,7 +430,9 @@ class QLearningAgent(ReinforcementAgent):
           you should return None.
         """
         "*** YOUR CODE HERE ***"
-        legalActions = self.getLegalActions(state)
+                ############################################################################################################ Eric Changed state to self.index
+
+        legalActions = state.getLegalActions(self.index)
         if len(legalActions) == 0:
             return None
         maxValue = -99999
@@ -428,7 +449,7 @@ class QLearningAgent(ReinforcementAgent):
         return maxAction
         util.raiseNotDefined()
 
-    def getAction(self, state):
+    def getAction1(self, state):
         """
           Compute the action to take in the current state.  With
           probability self.epsilon, we should take a random action and
@@ -440,7 +461,9 @@ class QLearningAgent(ReinforcementAgent):
           HINT: To pick randomly from a list, use random.choice(list)
         """
         # Pick Action
-        legalActions = self.getLegalActions(state)
+                ############################################################################################################ Eric Changed state to self.index
+
+        legalActions = state.getLegalActions(self.index)
         action = None
         "*** YOUR CODE HERE ***"
         if len(legalActions) == 0:
@@ -455,7 +478,7 @@ class QLearningAgent(ReinforcementAgent):
 
         return self.computeActionFromQValues(state)
 
-    def update(self, state, action, nextState, reward):
+    def update1(self, state, action, nextState, reward):
         """
           The parent class calls this to observe a
           state = action => nextState and reward transition.
@@ -465,11 +488,13 @@ class QLearningAgent(ReinforcementAgent):
           it will be called on your behalf
         """
         "*** YOUR CODE HERE ***"
-        actionList = self.getLegalActions(nextState)
+                ############################################################################################################ Eric Changed nextState to other stuff
+        
+        actionList = nextState.getLegalActions(self.index)
 
         if (not (nextState == None)) and len(actionList) > 0 :
             expectedRewardList = []
-            #print "state ",nextState," has legal actions ", self.getLegalActions(nextState)
+            #print "state ",nextState," has legal actions ", state.getLegalActions(nextState)
             for a in actionList:
                 #print "next state: ",nextState," action: ",a, "Value: ", self.Q[(nextState, a)]
                 expectedRewardList.append(self.Q[(nextState, a)])
@@ -513,13 +538,15 @@ class PacmanQAgent(QLearningAgent):
         self.index = 0  # This is always Pacman
         QLearningAgent.__init__(self, **args)
 
-    def getAction(self, state):
+    def getAction1(self, state):
         """
         Simply calls the getAction method of QLearningAgent and then
         informs parent of action for Pacman.  Do not change or remove this
         method.
         """
-        action = QLearningAgent.getAction(self,state)
+        action = QLearningAgent.getAction1(self,state)
+################################################################################################################################ Eric Changed Stuff Below
+
         self.doAction(state,action)
         return action
 
@@ -533,6 +560,10 @@ class ApproximateQAgent(PacmanQAgent):
        should work as is.
     """
     def __init__(self, extractor='IdentityExtractor', **args):
+        extractor = 'IdentityExtractor'
+        #########################
+        #print "what is the extractor name: ", extractor
+        ############################
         self.featExtractor = util.lookup(extractor, globals())()
         PacmanQAgent.__init__(self, **args)
         self.weights = util.Counter()
@@ -541,6 +572,7 @@ class ApproximateQAgent(PacmanQAgent):
         return self.weights
 
     def getQValue(self, state, action):
+        print "getQValue in ApproximateQAgent"
         """
           Should return Q(state,action) = w * featureVector
           where * is the dotProduct operator
@@ -555,12 +587,21 @@ class ApproximateQAgent(PacmanQAgent):
         return value
         #util.raiseNotDefined()
 
-    def update(self, state, action, nextState, reward):
+    def update1(self, state, action, nextState, reward):
         """
            Should update your weights based on transition
         """
+        print "update1 in ApproximateQAgent"
         "*** YOUR CODE HERE ***"
-        actionList = self.getLegalActions(nextState)
+        ##################################################################################################################################Eric Did Stuff
+        actionList = nextState.getLegalActions(self.index)
+
+
+        print "Action List", actionList
+
+
+
+
         weights = self.getWeights()
         features = self.featExtractor.getFeatures(state, action)
 
@@ -587,7 +628,7 @@ class ApproximateQAgent(PacmanQAgent):
             # you might want to print your weights here for debugging
             "*** YOUR CODE HERE ***"
             #print "weights",weights
-            pas
+            pass
 
 class FeatureExtractor:
     def getFeatures(self, state, action):
@@ -645,6 +686,7 @@ class SimpleExtractor(FeatureExtractor):
     """
 
     def getFeatures(self, state, action):
+
         # extract the grid of food and wall locations and get the ghost locations
         food = state.getFood()
         walls = state.getWalls()
@@ -673,3 +715,56 @@ class SimpleExtractor(FeatureExtractor):
             features["closest-food"] = float(dist) / (walls.width * walls.height)
         features.divideAll(10.0)
         return features
+
+
+
+
+
+class QCTFAgent(CaptureAgent, ApproximateQAgent):
+    def registerInitialState(self, gameState):
+        print "PRINT 1"
+        CaptureAgent.registerInitialState(self, gameState)
+
+
+        ApproximateQAgent.__init__(self)
+        self.startEpisode()
+        print "PRINT 2"
+
+        fileName = "pickledWeights"
+        if not os.path.isfile(fileName):
+            #for i in range(0,20):
+                #print "404 FILE NOT FOUND ------------ ERROR ERROR ERROR ERROR ERROR ERROR ERROR "
+            self.weights = util.Counter()
+        else:
+            myFile = open(fileName, "rb")
+            unpickled = pickle.load(myFile)
+            self.weights = unpickled
+        print "PRINT 3"
+
+
+
+
+
+
+    def chooseAction(self, gameState):
+        print "PRINT 4"
+        action = ApproximateQAgent.getAction1(self, gameState)
+        print "Action: ", action
+        return action
+
+
+
+
+
+
+
+
+
+
+    def final(self, gameState):
+        ApproximateQAgent.final(self, gameState)
+        self.stopEpisode()
+
+        toBePickledFile = open("testFile", "wb")
+        pickle.dump(self.weights, toBePickledFile)
+        toBePickledFile.close()
