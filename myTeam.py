@@ -16,6 +16,7 @@ from captureAgents import CaptureAgent
 import random, time, util, math
 from game import *
 import game
+import distanceCalculator
 
 #################
 # Team creation #
@@ -95,11 +96,28 @@ enemy2FoodHolding = 0
 
 
     def registerInitialState(self, gameState):
+        self.isRed = gamestate.isOnRedTeam(self.index)
+        if self.isRed:
+            self.enemyIndices = gameState.getBlueTeamIndices()
+        else:
+            self.enemyIndices = gameState.getRedTeamIndices()
+        
         CaptureAgent.registerInitialState(self, gameState)
-        distances = distanceCalculator.Distancer()
-        distances.getMazeDistances()
+        
+        self.distances = distanceCalculator.Distancer(gameState.data.layout)
+        self.distances.getMazeDistances()
+        
         self.foodHolding = 0
         self.enemy1FoodHolding = 0
+        self.enemy2FoodHolding = 0
+        
+        #RUU
+        self.inferenceModules = [ParticleFilter(DummyAgent) for a in range 0,2]
+        for inference in self.inferenceModules:
+            inference.initialize(gameState)
+        self.ghostBeliefs = [inf.getBeliefDistribution() for inf in self.inferenceModules]
+        
+        
         
     def chooseAction(self, gameState):
         #calculate food holdings
@@ -109,6 +127,20 @@ enemy2FoodHolding = 0
         self.foodHolding += dFood
         if distanceToLine(self.index, nextState) < 0:
             self.foodHolding = 0
+            
+        #RUU
+        for index, inf in enumerate(self.inferenceModules):
+            if not self.firstMove and self.elapseTimeEnable:
+                inf.elapseTime(gameState)
+            self.firstMove = False
+            if self.observeEnable:
+                inf.observeState(gameState)
+            self.ghostBeliefs[index] = inf.getBeliefDistribution()
+        self.display.updateDistributions(self.ghostBeliefs)
+        #return self.chooseAction(gameState)
+        
+        #decision
+        
         
 
 
@@ -128,10 +160,10 @@ class CTFExtractor(FeatureExtractor):
         index = thisAgent.index
         myPosition = state.getAgentPosition(index)
         distanceToLine = myPosition[0] - halfway
-        score = thisAgent.getScore()
+        score = thisAgent.getScore(state.generateSuccessor)
         timeLeft = state.data.timeLeft
         # compute the location of pacman after he takes the action
-        x, y = state.getPacmanPosition()
+        x, y = myPosition
         dx, dy = Actions.directionToVector(action)
         next_x, next_y = int(x + dx), int(y + dy)
         
@@ -146,7 +178,7 @@ class CTFExtractor(FeatureExtractor):
             myTeam = state.getRedTeamIndices()
         else: #on blue
             myFood = state.getBlueFood()
-            enemyFood = state.RedFood()
+            enemyFood = state.getRedFood()
             myCapsules = state.getBlueCapsules()
             enemyCapsules = state.getRedCapsules()
             enemies = state.getRedTeamIndices()
@@ -161,12 +193,20 @@ class CTFExtractor(FeatureExtractor):
         teammatePosition = state.getAgentPosition(teammateIndex)
         teammateD2L = distanceToLine(teammateIndex, state)
         features["teammate-distance-to-line"] = teammateD2L
-        d2t = distances.getDistance(myPosition, teammatePosition)
+        d2t = thisAgent.distances.getDistance(myPosition, teammatePosition)
         features["distance-to-teammate"] = d2t
             
             
         enemy1Position = state.getAgentPosition(enemies[0])
         if enemy1Position not None:
+            enemy1DistanceToLine = distanceToLine(enemies[0], state) #gives manhat distance to line and ghost/pacman in the form of +/-
+            features["enemy1-distance-to-line"] = enemy1DistanceToLine
+            d2e1 = distances.getDistance(myPosition, enemy1Position)
+            features["distance-to-enemy1"] = d2e1
+            td2e1 = distances.getDistance(teammatePosition, enemy1Position)
+            features["td2e1"] = td2e1
+        else:
+            enemy1Position = thisAgent.ghostPositions[0].argmax()
             enemy1DistanceToLine = distanceToLine(enemies[0], state) #gives manhat distance to line and ghost/pacman in the form of +/-
             features["enemy1-distance-to-line"] = enemy1DistanceToLine
             d2e1 = distances.getDistance(myPosition, enemy1Position)
@@ -183,17 +223,25 @@ class CTFExtractor(FeatureExtractor):
             features["distance-to-enemy2"] = d2e2
             td2e2 = distances.getDistance(teammatePosition, enemy2Position)
             features["td2e2"] = td2e2
+        else:
+            enemy1Position = thisAgent.ghostPositions[1].argmax()
+            enemy1DistanceToLine = distanceToLine(enemies[1], state) #gives manhat distance to line and ghost/pacman in the form of +/-
+            features["enemy1-distance-to-line"] = enemy1DistanceToLine
+            d2e1 = distances.getDistance(myPosition, enemy1Position)
+            features["distance-to-enemy1"] = d2e1
+            td2e1 = distances.getDistance(teammatePosition, enemy1Position)
+            features["td2e1"] = td2e1
             
        
         
         #food logic- distance to nearest food
-        dist = closestFood((next_x, next_y), food, walls)
+        dist = closestFood((next_x, next_y), enemyFood, walls)
         if dist is not None:
             # make the distance a number less than one otherwise the update
             # will diverge wildly
             features["closest-food"] = float(dist) / (walls.width * walls.height)
         #food logic- amount of food carrying
-        foodHolding = self.foodHolding
+        foodHolding = thisAgent.foodHolding
         features["food-holding"] = foodHolding
         
         
@@ -209,7 +257,7 @@ class CTFExtractor(FeatureExtractor):
         #returns the manhattan distance to the line. Positive if on enemy side, negative if on home side
         halfway = state.data.layout.width/2
         
-        dist = state.getAgentPosition(agentIndex)
+        dist = state.getAgentPosition(agentIndex)[0] - halfway
         if not state.isOnRedTeam(agentIndex):
             dist *= -1
         return dist
