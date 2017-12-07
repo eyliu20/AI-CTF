@@ -14,8 +14,10 @@
 
 from captureAgents import CaptureAgent
 import random, time, util, math
-from game import os
+from game import os, Directions, Actions
 import game
+import pickle
+import distanceCalculator
 
 #################
 # Team creation #
@@ -28,14 +30,20 @@ class Agent:
     def registerInitialState(self, state): # inspects the starting state
     """
     def __init__(self, index=0):
-        self.index = index
+        #self.index = index
+        pass
 
     def getAction1(self, state):
         """
         The Agent will receive a GameState (from either {pacman, capture, sonar}.py) and
         must return an action from Directions.{North, South, East, West, Stop}
         """
-        raiseNotDefined()
+        util.raiseNotDefined()
+
+
+
+
+
 def createTeam(firstIndex, secondIndex, isRed,
                              first = 'QCTFAgent', second = 'QCTFAgent'):
     """
@@ -535,7 +543,7 @@ class PacmanQAgent(QLearningAgent):
         args['gamma'] = gamma
         args['alpha'] = alpha
         args['numTraining'] = numTraining
-        self.index = 0  # This is always Pacman
+        #self.index = 0  # This is always Pacman
         QLearningAgent.__init__(self, **args)
 
     def getAction1(self, state):
@@ -560,7 +568,7 @@ class ApproximateQAgent(PacmanQAgent):
        should work as is.
     """
     def __init__(self, extractor='IdentityExtractor', **args):
-        extractor = 'IdentityExtractor'
+        extractor = 'CTFExtractor'
         #########################
         #print "what is the extractor name: ", extractor
         ############################
@@ -572,16 +580,17 @@ class ApproximateQAgent(PacmanQAgent):
         return self.weights
 
     def getQValue(self, state, action):
-        print "getQValue in ApproximateQAgent"
+        #print "getQValue in ApproximateQAgent"
         """
           Should return Q(state,action) = w * featureVector
           where * is the dotProduct operator
         """
         "*** YOUR CODE HERE ***"
         weights = self.getWeights()
-        features = self.featExtractor.getFeatures(state, action)
+        features = self.featExtractor.getFeatures(state, action, self)
 
         value = 0
+        #print "FEATURES: ", features
         for feature in features:
             value += features[feature]*weights[feature]
         return value
@@ -591,19 +600,19 @@ class ApproximateQAgent(PacmanQAgent):
         """
            Should update your weights based on transition
         """
-        print "update1 in ApproximateQAgent"
+        #print "update1 in ApproximateQAgent"
         "*** YOUR CODE HERE ***"
         ##################################################################################################################################Eric Did Stuff
         actionList = nextState.getLegalActions(self.index)
 
 
-        print "Action List", actionList
+        #print "Action List", actionList
 
 
 
 
         weights = self.getWeights()
-        features = self.featExtractor.getFeatures(state, action)
+        features = self.featExtractor.getFeatures(state, action, self)
 
         value = self.computeValueFromQValues(nextState)
         qValue = self.getQValue(state,action)
@@ -631,7 +640,7 @@ class ApproximateQAgent(PacmanQAgent):
             pass
 
 class FeatureExtractor:
-    def getFeatures(self, state, action):
+    def getFeatures(self, state, action, thisAgent):
         """
           Returns a dict from features to counts
           Usually, the count will just be 1.0 for
@@ -640,13 +649,13 @@ class FeatureExtractor:
         util.raiseNotDefined()
 
 class IdentityExtractor(FeatureExtractor):
-    def getFeatures(self, state, action):
+    def getFeatures(self, state, action, thisAgent):
         feats = util.Counter()
         feats[(state,action)] = 1.0
         return feats
 
 class CoordinateExtractor(FeatureExtractor):
-    def getFeatures(self, state, action):
+    def getFeatures(self, state, action, thisAgent):
         feats = util.Counter()
         feats[state] = 1.0
         feats['x=%d' % state[0]] = 1.0
@@ -685,7 +694,7 @@ class SimpleExtractor(FeatureExtractor):
     - whether a ghost is one step away
     """
 
-    def getFeatures(self, state, action):
+    def getFeatures(self, state, action, thisAgent):
 
         # extract the grid of food and wall locations and get the ghost locations
         food = state.getFood()
@@ -716,30 +725,142 @@ class SimpleExtractor(FeatureExtractor):
         features.divideAll(10.0)
         return features
 
+class CTFExtractor(FeatureExtractor):
+    """
+    returns features:
+    
+    """
+    def getFeatures(self, state, action, thisAgent):
+    
+        features = util.Counter()
+    
+        #info gathering
+        #food = state.getFood()
+        walls = state.getWalls()
+        halfway = state.data.layout.width/2
+        index = thisAgent.index
+        myPosition = state.getAgentPosition(index)
+        distanceToLine = myPosition[0] - halfway
+        score = thisAgent.getScore(state)
+        timeLeft = state.data.timeleft
+        
+        # compute the location of pacman after he takes the action
+        x, y = myPosition   
+        dx, dy = Actions.directionToVector(action)
+        next_x, next_y = int(x + dx), int(y + dy)
+        
+        
+        #team specific- move to init?
+        if thisAgent.isRed:
+            myFood = state.getRedFood()
+            enemyFood = state.getBlueFood()
+            myCapsules = state.getRedCapsules()
+            enemyCapsules = state.getBlueCapsules()
+            enemies = state.getBlueTeamIndices()
+            myTeam = state.getRedTeamIndices()
+        else: #on blue
+            myFood = state.getBlueFood()
+            enemyFood = state.getRedFood()
+            myCapsules = state.getBlueCapsules()
+            enemyCapsules = state.getRedCapsules()
+            enemies = state.getRedTeamIndices()
+            myTeam = state.getBlueTeamIndices()
+            distanceToLine *= -1
+            
+        if myTeam[0] == index:
+            teammateIndex = myTeam[1]
+        else:
+            teammateIndex = myTeam[0]
+            
+        teammatePosition = state.getAgentPosition(teammateIndex)
+        teammateD2L = self.distanceToLine(teammateIndex, state)
+        features["teammate-distance-to-line"] = teammateD2L
+        d2t = thisAgent.distances.getDistance(myPosition, teammatePosition)
+        features["distance-to-teammate"] = d2t
+            
+            
+        enemy1Position = state.getAgentPosition(enemies[0])
+        if enemy1Position != None:
+            enemy1DistanceToLine = self.distanceToLine(enemies[0], state) #gives manhat distance to line and ghost/pacman in the form of +/-
+            features["enemy1-distance-to-line"] = enemy1DistanceToLine
+            d2e1 = thisAgent.distances.getDistance(myPosition, enemy1Position)
+            features["distance-to-enemy1"] = d2e1
+            td2e1 = thisAgent.distances.getDistance(teammatePosition, enemy1Position)
+            features["td2e1"] = td2e1
+        
+        
+        enemy2Position = state.getAgentPosition(enemies[1])
+        if enemy2Position != None:
+            enemy2DistanceToLine = self.distanceToLine(enemies[1], state)
+            features["enemy2-distance-to-line"] = enemy2DistanceToLine
+            d2e2 = thisAgent.distances.getDistance(myPosition, enemy2Position)
+            features["distance-to-enemy2"] = d2e2
+            td2e2 = thisAgent.distances.getDistance(teammatePosition, enemy2Position)
+            features["td2e2"] = td2e2
+            
+       
+        
+        #food logic- distance to nearest food
+        dist = closestFood((next_x, next_y), enemyFood, walls)
+        if dist is not None:
+            # make the distance a number less than one otherwise the update
+            # will diverge wildly
+            features["closest-food"] = float(dist) / (walls.width * walls.height)
+        #food logic- amount of food carrying
+        foodHolding = thisAgent.foodHolding
+        features["food-holding"] = foodHolding
+        
+        
+        
+        
+        #assign to features
+        features["distance-to-line"] = distanceToLine
+        
 
+
+
+
+        return features
+        
+        
+    def distanceToLine(self, agentIndex, state):
+        #returns the manhattan distance to the line. Positive if on enemy side, negative if on home side
+        halfway = state.data.layout.width/2
+        
+        dist = state.getAgentPosition(agentIndex)[0] - halfway
+        if not state.isOnRedTeam(agentIndex):
+            dist *= -1
+        return dist
 
 
 
 class QCTFAgent(CaptureAgent, ApproximateQAgent):
     def registerInitialState(self, gameState):
-        print "PRINT 1"
+        #print "PRINT 1"
         CaptureAgent.registerInitialState(self, gameState)
+        self.isRed = gameState.isOnRedTeam(self.index)
+
+        self.distances = distanceCalculator.Distancer(gameState.data.layout)
+        self.distances.getMazeDistances()
+
+        self.foodHolding = 0
+        self.enemy1FoodHolding = 0
 
 
         ApproximateQAgent.__init__(self)
         self.startEpisode()
-        print "PRINT 2"
+        #print "PRINT 2"
 
-        fileName = "pickledWeights"
+        fileName = "testFile2"
         if not os.path.isfile(fileName):
-            #for i in range(0,20):
-                #print "404 FILE NOT FOUND ------------ ERROR ERROR ERROR ERROR ERROR ERROR ERROR "
+            for i in range(0,20):
+                print "404 FILE NOT FOUND ------------ ERROR ERROR ERROR ERROR ERROR ERROR ERROR "
             self.weights = util.Counter()
         else:
             myFile = open(fileName, "rb")
             unpickled = pickle.load(myFile)
             self.weights = unpickled
-        print "PRINT 3"
+        #print "PRINT 3"
 
 
 
@@ -747,10 +868,38 @@ class QCTFAgent(CaptureAgent, ApproximateQAgent):
 
 
     def chooseAction(self, gameState):
-        print "PRINT 4"
-        action = ApproximateQAgent.getAction1(self, gameState)
-        print "Action: ", action
-        return action
+        #print "PRINT 4"
+        #print "MY INDEX: ", self.index
+        #print "POSSIBLE ACTIONS: ", gameState.getLegalActions(self.index)
+        myState = gameState.getAgentState(self.index)
+        myPos = myState.getPosition()
+        x1,y1 = myPos
+        #print "MYPOS: ", myPos
+        #Agent is in left factory
+        if(x1 == 30):
+            if(y1 != 1):
+                #print "returning south"
+                return Directions.SOUTH
+            else:
+                #print "returning west"
+                return Directions.WEST
+        elif(y1 == 1 and (x1 == 30 or x1 == 29)):
+            #print "returning west"
+            return Directions.WEST
+        elif(x1 == 28 and (y1 == 1 or y1 == 2 or y1 == 3 or y1 == 4)):
+            #print "returning North"
+            return Directions.NORTH
+
+
+
+
+        #print "my pos: ", myPos
+
+
+        else:
+            action = ApproximateQAgent.getAction1(self, gameState)
+            #print "Action: ", action
+            return action
 
 
 
@@ -765,6 +914,6 @@ class QCTFAgent(CaptureAgent, ApproximateQAgent):
         ApproximateQAgent.final(self, gameState)
         self.stopEpisode()
 
-        toBePickledFile = open("testFile", "wb")
+        toBePickledFile = open("testFile2", "wb")
         pickle.dump(self.weights, toBePickledFile)
         toBePickledFile.close()
