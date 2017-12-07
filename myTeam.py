@@ -91,16 +91,28 @@ class DummyAgent(CaptureAgent):
 
         return random.choice(actions)
 class QCTFAgent(ApproximateQAgent):
-enemy1FoodHolding = 0
-enemy2FoodHolding = 0
+    enemy1FoodHolding = 0
+    enemy2FoodHolding = 0
+    lastState = None
+
+    foodHoldings = [0,0,0,0]
+
+    pfilters = [ParticleFilter(DummyAgent) for a in range 0,2]
 
 
     def registerInitialState(self, gameState):
         self.isRed = gamestate.isOnRedTeam(self.index)
         if self.isRed:
             self.enemyIndices = gameState.getBlueTeamIndices()
+            self.teamIndices = gameState.getRedTeamIndices()
         else:
             self.enemyIndices = gameState.getRedTeamIndices()
+            self.teamIndices = gameState.getBlueTeamIndices()
+        
+        if self.index == teamIndices[0]:
+            self.myPf = pfilters[0]
+        else:
+            self.myPf = pfilters[1]
         
         CaptureAgent.registerInitialState(self, gameState)
         
@@ -110,38 +122,53 @@ enemy2FoodHolding = 0
         self.foodHolding = 0
         self.enemy1FoodHolding = 0
         self.enemy2FoodHolding = 0
+        self.lastState = gameState
         
         #RUU
         self.inferenceModules = [ParticleFilter(DummyAgent) for a in range 0,2]
         for inference in self.inferenceModules:
             inference.initialize(gameState)
-        self.ghostBeliefs = [inf.getBeliefDistribution() for inf in self.inferenceModules]
+        #self.ghostBeliefs = [inf.getBeliefDistribution() for inf in self.inferenceModules]
         
         
         
     def chooseAction(self, gameState):
         #calculate food holdings
-        originalState = state
-        nextState = state.generateSuccessor(index, chosenAction)
-        dFood = thisAgent.getFood(originalState) - thisAgent.getFood(nextState)
-        self.foodHolding += dFood
-        if distanceToLine(self.index, nextState) < 0:
-            self.foodHolding = 0
-            
+        
+        dOurFood = len(self.getFoodYouAreDefending(gameState).asList()) - len(self.getFoodYouAreDefending(self.lastState).asList())
+        foodHoldings[(self.index - 1) % 4] += dOurFood
+        lastEnemyPosition = gameState.getAgentPosition(self.index & 4)
+        if lastEnemyPosition == None:
+            lastEnemyPosition = self.myPf.getBeliefDistribution.argMax()
+        if distanceToLine(lastEnemyPosition, gameState) < 0
+            foodHoldings[(self.index - 1) % 4] = 0
+        
+        
         #RUU
-        for index, inf in enumerate(self.inferenceModules):
-            if not self.firstMove and self.elapseTimeEnable:
-                inf.elapseTime(gameState)
-            self.firstMove = False
-            if self.observeEnable:
-                inf.observeState(gameState)
-            self.ghostBeliefs[index] = inf.getBeliefDistribution()
-        self.display.updateDistributions(self.ghostBeliefs)
-        #return self.chooseAction(gameState)
+        
+        myPf.elapseTime(gameState)
+        myPf.observe(gameState.getAgentDistances()[(self.index - 1) % 4], gameState)
         
         #decision
         
         
+        #update my foodholding
+        originalState = state
+        nextState = state.generateSuccessor(index, chosenAction)
+        dFood = len(thisAgent.getFood(originalState).asList()) - len(thisAgent.getFood(nextState).asList())
+        self.foodHolding += dFood
+        if distanceToLine(self.index, nextState) < 0:
+            self.foodHolding = 0
+        foodHodlings[self.index] = self.foodHolding
+        
+def distanceToLine(agentIndex, state):
+        #returns the manhattan distance to the line. Positive if on enemy side, negative if on home side
+        halfway = state.data.layout.width/2
+        
+        dist = state.getAgentPosition(agentIndex)[0] - halfway
+        if not state.isOnRedTeam(agentIndex):
+            dist *= -1
+        return dist        
 
 
 class CTFExtractor(FeatureExtractor):
@@ -206,7 +233,7 @@ class CTFExtractor(FeatureExtractor):
             td2e1 = distances.getDistance(teammatePosition, enemy1Position)
             features["td2e1"] = td2e1
         else:
-            enemy1Position = thisAgent.ghostPositions[0].argmax()
+            enemy1Position = thisAgent.pFilters[0].getBeliefDistribution.argmax()
             enemy1DistanceToLine = distanceToLine(enemies[0], state) #gives manhat distance to line and ghost/pacman in the form of +/-
             features["enemy1-distance-to-line"] = enemy1DistanceToLine
             d2e1 = distances.getDistance(myPosition, enemy1Position)
@@ -224,7 +251,7 @@ class CTFExtractor(FeatureExtractor):
             td2e2 = distances.getDistance(teammatePosition, enemy2Position)
             features["td2e2"] = td2e2
         else:
-            enemy1Position = thisAgent.ghostPositions[1].argmax()
+            enemy1Position = thisAgent.pFilters[0].getBeliefDistribution.argmax()
             enemy1DistanceToLine = distanceToLine(enemies[1], state) #gives manhat distance to line and ghost/pacman in the form of +/-
             features["enemy1-distance-to-line"] = enemy1DistanceToLine
             d2e1 = distances.getDistance(myPosition, enemy1Position)
@@ -244,7 +271,11 @@ class CTFExtractor(FeatureExtractor):
         foodHolding = thisAgent.foodHolding
         features["food-holding"] = foodHolding
         
+        enemy1FoodHolding = self.foodHoldings[enemies[0]]
+        features["enemy1-food-held"] = enemy1FoodHolding
         
+        enemy2FoodHolding = self.foodHoldings[enemies[1]]
+        features["enemy2-food-held"] = enemy2FoodHolding
         
         
         #assign to features
@@ -253,14 +284,7 @@ class CTFExtractor(FeatureExtractor):
         
         
         
-    def distanceToLine(agentIndex, state):
-        #returns the manhattan distance to the line. Positive if on enemy side, negative if on home side
-        halfway = state.data.layout.width/2
-        
-        dist = state.getAgentPosition(agentIndex)[0] - halfway
-        if not state.isOnRedTeam(agentIndex):
-            dist *= -1
-        return dist
+    
 
 
 
