@@ -272,7 +272,7 @@ class ReinforcementAgent(ValueEstimationAgent):
     def isInTesting(self):
         return not self.isInTraining()
 
-    def __init__(self, actionFn = None, numTraining=100, epsilon=0.75, alpha=0.5, gamma=1):
+    def __init__(self, actionFn = None, numTraining=100, epsilon=0.5, alpha=0.75, gamma=1):
         """
         actionFn: Function which takes a state and returns the list of legal actions
 
@@ -321,8 +321,58 @@ class ReinforcementAgent(ValueEstimationAgent):
             This is where we ended up after our last action.
             The simulation should somehow ensure this is called
         """
+        ########################################################################################Eric Is Changing Rewards
+
         if not self.lastState is None:
-            reward = state.getScore() - self.lastState.getScore()
+            reward = (state.getScore() - self.lastState.getScore())*50
+
+            if state.isOnRedTeam():
+                if len(util.matrixAsList(state.getBlueFood())) < len(util.matrixAsList(self.lastState.getBlueFood())):
+                    reward += 10
+
+                killScore = 0
+                enemyIndicies = state.getBlueTeamIndices()
+                prevDistances = util.Counter()
+                for enemy in enemyIndicies:
+                    if self.lastState.getAgentPosition(enemy) is not None:
+                        prevDistances[enemy] = util.manhattanDistance(self.lastState.getAgentPosition(enemy), self.lastState.getAgentPosition(self.index))
+                newDistances = util.Counter()
+                for enemy in enemyIndicies:
+                    if state.getAgentPosition(enemy) is not None:
+                        prevDistances[enemy] = util.manhattanDistance(state.getAgentPosition(enemy), state.getAgentPosition(self.index))
+                
+                x1,y1 = state.getAgentPosition(self.index)
+
+                halfway = state.data.layout.width/2
+                if x1 < halfway:
+                
+                    for enemyIndex in enemyIndicies:
+                        if oldDistances[enemyIndex] == 1:
+                            if x1 != 30 and (newDistances[enemyIndex] > 2 or newDistances[enemyIndex] == 0):
+                                #TODO: Give more score for killing enemy with food
+                                killScore += 100
+                    reward += killScore
+
+
+            else:
+                if len(util.matrixAsList(state.getRedFood())) < len(util.matrixAsList(self.lastState.getRedFood())):
+                    reward += 10
+
+            #reward -= 50
+
+
+
+
+
+
+
+
+
+
+
+
+
+
             self.observeTransition(self.lastState, self.lastAction, state, reward)
         return state
 
@@ -836,13 +886,13 @@ class CTFExtractor(FeatureExtractor):
         if distanceToLine < 0:
             distanceToLine = 0
         #assign to features
-        features["distance-to-line"] = distanceToLine
+        features["distance-to-line"] = distanceToLine /10
         
 
 
 
 
-        features.divideAll(10.0)
+        #features.divideAll(10.0)
         return features
         
         
