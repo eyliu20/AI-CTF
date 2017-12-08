@@ -1096,7 +1096,7 @@ def d2lPosReciever(agentIndex, state, position):
 def distanceToLine(agentIndex, state):
     #returns the manhattan distance to the line. Positive if on enemy side, negative if on home side
     halfway = state.data.layout.width/2
-    print "AGENT INDEX: ", agentIndex
+    #print "AGENT INDEX: ", agentIndex
     position = state.getAgentPosition(agentIndex)
     dist = position[0] - halfway
     
@@ -1116,12 +1116,14 @@ class CTFExtractor(FeatureExtractor):
     
         #info gathering
         #food = state.getFood()
+        nextState = state.generateSuccessor(thisAgent.index, action)
+        
         walls = state.getWalls()
         halfway = state.data.layout.width/2
         index = thisAgent.index
         myPosition = state.getAgentPosition(index)
         d2l = myPosition[0] - halfway
-        score = thisAgent.getScore(state)
+        nextScore = thisAgent.getScore(nextState)
         timeLeft = state.data.timeleft
         
         # compute the location of pacman after he takes the action
@@ -1190,11 +1192,11 @@ class CTFExtractor(FeatureExtractor):
         else:
             enemy2Position = thisAgent.pfilters[0].getBeliefDistribution().argMax()
             enemy2DistanceToLine = d2lPosReciever(enemies[1], state, enemy2Position) #gives manhat distance to line and ghost/pacman in the form of +/-
-            features["enemy1-distance-to-line"] = enemy1DistanceToLine
+            features["enemy2-distance-to-line"] = enemy1DistanceToLine
             d2e2 = thisAgent.distances.getDistance(myPosition, enemy1Position)
-            features["distance-to-enemy1"] = d2e1
+            features["distance-to-enemy1"] = d2e2
             td2e2 = thisAgent.distances.getDistance(teammatePosition, enemy1Position)
-            features["td2e1"] = td2e1    
+            features["td2e2"] = td2e2    
        
         
         #food logic- distance to nearest food
@@ -1218,11 +1220,12 @@ class CTFExtractor(FeatureExtractor):
         #assign to features
         features["distance-to-line"] = d2l /10
         
-        features["next-score"] = score
+        features["next-score"] = nextScore
         
         features["time-left"] = timeLeft / 1200
 
-
+        features["enemy-food-left-after"] = len(thisAgent.getFood(nextState).asList())
+        features["my-food-left-after"] = len(thisAgent.getFoodYouAreDefending(nextState).asList())
 
         #features.divideAll(10.0)
         return features
