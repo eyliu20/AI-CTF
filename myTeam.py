@@ -272,7 +272,7 @@ class ReinforcementAgent(ValueEstimationAgent):
     def isInTesting(self):
         return not self.isInTraining()
 
-    def __init__(self, actionFn = None, numTraining=100, epsilon=0.75, alpha=0.5, gamma=1):
+    def __init__(self, actionFn = None, numTraining=100, epsilon=0.5, alpha=0.5, gamma=1):
         """
         actionFn: Function which takes a state and returns the list of legal actions
 
@@ -321,8 +321,80 @@ class ReinforcementAgent(ValueEstimationAgent):
             This is where we ended up after our last action.
             The simulation should somehow ensure this is called
         """
+        ########################################################################################Eric Is Changing Rewards
+
         if not self.lastState is None:
-            reward = state.getScore() - self.lastState.getScore()
+            reward = (state.getScore() - self.lastState.getScore())*50
+
+            if state.isOnRedTeam():
+                if len(util.matrixAsList(state.getBlueFood())) < len(util.matrixAsList(self.lastState.getBlueFood())):
+                    reward += 10
+
+                killScore = 0
+                enemyIndicies = state.getBlueTeamIndices()
+                prevDistances = util.Counter()
+                for enemy in enemyIndicies:
+                    if self.lastState.getAgentPosition(enemy) is not None:
+                        prevDistances[enemy] = util.manhattanDistance(self.lastState.getAgentPosition(enemy), self.lastState.getAgentPosition(self.index))
+                newDistances = util.Counter()
+                for enemy in enemyIndicies:
+                    if state.getAgentPosition(enemy) is not None:
+                        prevDistances[enemy] = util.manhattanDistance(state.getAgentPosition(enemy), state.getAgentPosition(self.index))
+                
+                x1,y1 = state.getAgentPosition(self.index)
+
+                halfway = state.data.layout.width/2
+                if x1 < halfway:
+                
+                    for enemyIndex in enemyIndicies:
+                        if prevDistances[enemyIndex] == 1:
+                            if x1 != 30 and (newDistances[enemyIndex] > 2 or newDistances[enemyIndex] == 0):
+                                #TODO: Give more score for killing enemy with food
+                                killScore += 100
+                    reward += killScore
+
+
+            else:
+                if len(util.matrixAsList(state.getRedFood())) < len(util.matrixAsList(self.lastState.getRedFood())):
+                    reward += 10
+                killScore = 0
+                enemyIndicies = state.getRedTeamIndices()
+                prevDistances = util.Counter()
+                for enemy in enemyIndicies:
+                    if self.lastState.getAgentPosition(enemy) is not None:
+                        prevDistances[enemy] = util.manhattanDistance(self.lastState.getAgentPosition(enemy), self.lastState.getAgentPosition(self.index))
+                newDistances = util.Counter()
+                for enemy in enemyIndicies:
+                    if state.getAgentPosition(enemy) is not None:
+                        prevDistances[enemy] = util.manhattanDistance(state.getAgentPosition(enemy), state.getAgentPosition(self.index))
+                
+                x1,y1 = state.getAgentPosition(self.index)
+
+                halfway = state.data.layout.width/2
+                if x1 > halfway:
+                
+                    for enemyIndex in enemyIndicies:
+                        if prevDistances[enemyIndex] == 1:
+                            if x1 != 30 and (newDistances[enemyIndex] > 2 or newDistances[enemyIndex] == 0):
+                                #TODO: Give more score for killing enemy with food
+                                killScore += 100
+                    reward += killScore
+
+            #reward -= 50
+
+            print "REWARD: ", reward
+
+
+
+
+
+
+
+
+
+
+
+
             self.observeTransition(self.lastState, self.lastAction, state, reward)
         return state
 
@@ -494,6 +566,7 @@ class QLearningAgent(ReinforcementAgent):
         #util.raiseNotDefined()
         acToReturn = self.computeActionFromQValues(state)
         #print "GETACTION1 IN QLEARNINGAGENT COINTRUTH IS FALSE< ACTION IS : ", acToReturn
+        #self.doAction(state, acToReturn)
         return acToReturn
 
     def update1(self, state, action, nextState, reward):
@@ -538,7 +611,7 @@ class QLearningAgent(ReinforcementAgent):
 class PacmanQAgent(QLearningAgent):
     "Exactly the same as QLearningAgent, but with different default parameters"
 
-    def __init__(self, epsilon=0.05,gamma=0.8,alpha=0.2, numTraining=0, **args):
+    def __init__(self, epsilon=0.5,gamma=0.8,alpha=0.5, numTraining=0, **args):
         """
         These default parameters can be changed from the pacman.py command line.
         For example, to change the exploration rate, try:
@@ -619,7 +692,7 @@ class ApproximateQAgent(PacmanQAgent):
         ##################################################################################################################################Eric Did Stuff
         actionList = nextState.getLegalActions(self.index)
 
-
+        print "UPDATE IS CALLED, REWARD IS :", reward
         #print "Action List", actionList
 
 
@@ -630,7 +703,8 @@ class ApproximateQAgent(PacmanQAgent):
         features = self.featExtractor.getFeatures(state, action, self)
         #self.myFeats = features
         if self.index == 0:
-            print "FEATURES: ",features
+            pass
+            #print "FEATURES: ",features
         value = self.computeValueFromQValues(nextState)
         qValue = self.getQValue(state,action)
         #print "value", value, "qValue", qValue
@@ -793,11 +867,13 @@ class CTFExtractor(FeatureExtractor):
         teammatePosition = state.getAgentPosition(teammateIndex)
         teammateD2L = self.distanceToLine(teammateIndex, state)
 
-
-        features["teammate-distance-to-line"] = teammateD2L
+        #Eric Divided by 10
+        features["teammate-distance-to-line"] = teammateD2L / 10
 
         d2t = thisAgent.distances.getDistance(myPosition, teammatePosition)
-        features["distance-to-teammate"] = d2t
+
+        #Eric divided by 10
+        features["distance-to-teammate"] = d2t / 10
             
             
         enemy1Position = state.getAgentPosition(enemies[0])
@@ -826,7 +902,8 @@ class CTFExtractor(FeatureExtractor):
         if dist is not None:
             # make the distance a number less than one otherwise the update
             # will diverge wildly
-            features["closest-food"] = float(dist) / (walls.width * walls.height)
+            #Eric multiplied by 10
+            features["closest-food"] = (float(dist) / (walls.width * walls.height)) * 10
         #food logic- amount of food carrying
         foodHolding = thisAgent.foodHolding
         features["food-holding"] = foodHolding
@@ -836,13 +913,13 @@ class CTFExtractor(FeatureExtractor):
         if distanceToLine < 0:
             distanceToLine = 0
         #assign to features
-        features["distance-to-line"] = distanceToLine
+        features["distance-to-line"] = distanceToLine /10
         
 
 
 
 
-        features.divideAll(10.0)
+        #features.divideAll(10.0)
         return features
         
         
@@ -854,6 +931,15 @@ class CTFExtractor(FeatureExtractor):
         #if not state.isOnRedTeam(agentIndex):
         #    dist *= -1
         return dist
+
+
+
+
+    
+
+
+
+
 
 
 
@@ -873,7 +959,6 @@ class QCTFAgent(CaptureAgent, ApproximateQAgent):
         ApproximateQAgent.__init__(self)
         self.startEpisode()
         #print "PRINT 2"
-
         self.fileName = "testFile" + str(self.index)
         if not os.path.isfile(self.fileName):
             for i in range(0,20):
@@ -885,6 +970,11 @@ class QCTFAgent(CaptureAgent, ApproximateQAgent):
             self.weights = unpickled
         #print "PRINT 3"
 
+
+
+
+        self.initial_food = self.getFood(gameState).count()
+        self.initial_defending_food = self.getFoodYouAreDefending(gameState).count()
 
 
 
@@ -930,6 +1020,10 @@ class QCTFAgent(CaptureAgent, ApproximateQAgent):
         else:
 
             action = ApproximateQAgent.getAction1(self, gameState)
+            
+            nextState = gameState.generateSuccessor(self.index, action)
+            self.update1(gameState, action, nextState, self.getReward(gameState))
+            self.doAction(gameState, action)
             #if self.index == 1:
                 #print "WEIGHTS: ", self.weights
                 #print "MY FEATURES: ", self.myFeats
@@ -937,16 +1031,88 @@ class QCTFAgent(CaptureAgent, ApproximateQAgent):
             return action
 
 
+    def getReward(self, state):
+        #print "self.lastState: ",self.lastState
+
+        if not self.lastState is None:
+            reward = (state.getScore() - self.lastState.getScore())*50
+
+            if state.isOnRedTeam(self.index):
+                print "ENEMY CURRENT FOOD: ",len(state.getBlueFood().asList()) 
+                print "ENEMY PREV FOOD: ",len(self.lastState.getBlueFood().asList())
+                print len(state.getBlueFood().asList()) < len(self.lastState.getBlueFood().asList())
+                
+                #if len(state.getBlueFood().asList()) < len(self.lastState.getBlueFood().asList()):
+                #    reward += 10
+                myAgentState = state.getAgentState(self.index)
+                #reward += (20 - len(state.getBlueFood().asList())) * 10
+                reward -= (20 - len(state.getRedFood().asList())) * 10
+                reward += myAgentState.numCarrying
+                killScore = 0
 
 
 
 
 
+                enemyIndicies = state.getBlueTeamIndices()
+                prevDistances = util.Counter()
+                for enemy in enemyIndicies:
+                    if self.lastState.getAgentPosition(enemy) is not None:
+                        prevDistances[enemy] = util.manhattanDistance(self.lastState.getAgentPosition(enemy), self.lastState.getAgentPosition(self.index))
+                newDistances = util.Counter()
+                for enemy in enemyIndicies:
+                    if state.getAgentPosition(enemy) is not None:
+                        prevDistances[enemy] = util.manhattanDistance(state.getAgentPosition(enemy), state.getAgentPosition(self.index))
+                
+                x1,y1 = state.getAgentPosition(self.index)
+
+                halfway = state.data.layout.width/2
+                if x1 < halfway:
+                
+                    for enemyIndex in enemyIndicies:
+                        if prevDistances[enemyIndex] == 1:
+                            if x1 != 30 and (newDistances[enemyIndex] > 2 or newDistances[enemyIndex] == 0):
+                                #TODO: Give more score for killing enemy with food
+                                killScore += 100
+                    reward += killScore
 
 
+            else:
+                if len(util.matrixAsList(state.getRedFood())) < len(util.matrixAsList(self.lastState.getRedFood())):
+                    reward += 10
+                killScore = 0
+                enemyIndicies = state.getRedTeamIndices()
+                prevDistances = util.Counter()
+                for enemy in enemyIndicies:
+                    if self.lastState.getAgentPosition(enemy) is not None:
+                        prevDistances[enemy] = util.manhattanDistance(self.lastState.getAgentPosition(enemy), self.lastState.getAgentPosition(self.index))
+                newDistances = util.Counter()
+                for enemy in enemyIndicies:
+                    if state.getAgentPosition(enemy) is not None:
+                        prevDistances[enemy] = util.manhattanDistance(state.getAgentPosition(enemy), state.getAgentPosition(self.index))
+                
+                x1,y1 = state.getAgentPosition(self.index)
 
+                halfway = state.data.layout.width/2
+                if x1 > halfway:
+                
+                    for enemyIndex in enemyIndicies:
+                        if oldDistances[enemyIndex] == 1:
+                            if x1 != 30 and (newDistances[enemyIndex] > 2 or newDistances[enemyIndex] == 0):
+                                #TODO: Give more score for killing enemy with food
+                                killScore += 100
+                    reward += killScore
+
+            #reward -= 50
+
+            print "REWARD: ", reward
+            return reward
+
+
+    
     def final(self, gameState):
         ApproximateQAgent.final(self, gameState)
+        #ReinforcementAgent.final(self, gameState)
         self.stopEpisode()
 
         toBePickledFile = open(self.fileName, "wb")
