@@ -18,6 +18,7 @@ from game import os, Directions, Actions
 import game
 import cPickle as pickle
 import distanceCalculator
+#import capture
 
 #################
 # Team creation #
@@ -387,14 +388,6 @@ class ReinforcementAgent(ValueEstimationAgent):
 
 
 
-
-
-
-
-
-
-
-
             self.observeTransition(self.lastState, self.lastAction, state, reward)
         return state
 
@@ -566,7 +559,6 @@ class QLearningAgent(ReinforcementAgent):
         #util.raiseNotDefined()
         acToReturn = self.computeActionFromQValues(state)
         #print "GETACTION1 IN QLEARNINGAGENT COINTRUTH IS FALSE< ACTION IS : ", acToReturn
-        #self.doAction(state, acToReturn)
         return acToReturn
 
     def update1(self, state, action, nextState, reward):
@@ -611,7 +603,7 @@ class QLearningAgent(ReinforcementAgent):
 class PacmanQAgent(QLearningAgent):
     "Exactly the same as QLearningAgent, but with different default parameters"
 
-    def __init__(self, epsilon=0.5,gamma=0.8,alpha=0.5, numTraining=0, **args):
+    def __init__(self, epsilon=0.05,gamma=0.8,alpha=0.2, numTraining=0, **args):
         """
         These default parameters can be changed from the pacman.py command line.
         For example, to change the exploration rate, try:
@@ -692,7 +684,7 @@ class ApproximateQAgent(PacmanQAgent):
         ##################################################################################################################################Eric Did Stuff
         actionList = nextState.getLegalActions(self.index)
 
-        print "UPDATE IS CALLED, REWARD IS :", reward
+
         #print "Action List", actionList
 
 
@@ -704,7 +696,7 @@ class ApproximateQAgent(PacmanQAgent):
         #self.myFeats = features
         if self.index == 0:
             pass
-            #print "FEATURES: ",features
+            print "FEATURES: ",features
         value = self.computeValueFromQValues(nextState)
         qValue = self.getQValue(state,action)
         #print "value", value, "qValue", qValue
@@ -816,6 +808,318 @@ class SimpleExtractor(FeatureExtractor):
         features.divideAll(10.0)
         return features
 
+#RUU section
+
+class EnemyAgent( Agent ):
+    def __init__( self, index ):
+        self.index = index
+
+    def getAction( self, state ):
+        dist = self.getDistribution(state)
+        if len(dist) == 0:
+            return Directions.STOP
+        else:
+            return util.chooseFromDistribution( dist )
+
+    def getDistribution(self, state):
+        "Returns a Counter encoding a distribution over actions from the provided state."
+        util.raiseNotDefined()
+
+class RandomEnemy( EnemyAgent ):
+    "A ghost that chooses a legal action uniformly at random."
+    def getDistribution( self, state ):
+        dist = util.Counter()
+        for a in state.getLegalActions( self.index ): dist[a] = 1.0
+        dist.normalize()
+        return dist
+
+
+class InferenceModule:
+    """
+    An inference module tracks a belief distribution over a ghost's location.
+    This is an abstract class, which you should not modify.
+    """
+
+    ############################################
+    # Useful methods for all inference modules #
+    ############################################
+
+    def __init__(self, ghostAgent):
+        "Sets the ghost agent for later access"
+        self.ghostAgent = ghostAgent
+        self.index = ghostAgent.index
+        self.obs = [] # most recent observation position
+
+    def getJailPosition(self):
+        return (2 * self.ghostAgent.index - 1, 1)
+
+    def getPositionDistribution(self, gameState):
+        """
+        Returns a distribution over successor positions of the ghost from the
+        given gameState.
+
+        You must first place the ghost in the gameState, using setGhostPosition
+        below.
+        """
+        ghostPosition = gameState.getAgentPosition(self.index) # The position you set
+        actionDist = self.ghostAgent.getDistribution(gameState)
+        dist = util.Counter()
+        for action, prob in actionDist.items():
+            successorPosition = game.Actions.getSuccessor(ghostPosition, action)
+            dist[successorPosition] = prob
+        return dist
+
+    def setGhostPosition(self, gameState, ghostPosition):
+        """
+        Sets the position of the ghost for this inference module to the
+        specified position in the supplied gameState.
+
+        Note that calling setGhostPosition does not change the position of the
+        ghost in the GameState object used for tracking the true progression of
+        the game.  The code in inference.py only ever receives a deep copy of
+        the GameState object which is responsible for maintaining game state,
+        not a reference to the original object.  Note also that the ghost
+        distance observations are stored at the time the GameState object is
+        created, so changing the position of the ghost will not affect the
+        functioning of observeState.
+        """
+        conf = game.Configuration(ghostPosition, game.Directions.STOP)
+        gameState.data.agentStates[self.index] = game.AgentState(conf, False)
+        return gameState
+
+    def observeState(self, gameState):
+        "Collects the relevant noisy distance observation and pass it along."
+        distances = gameState.getNoisyGhostDistances()
+        if len(distances) >= self.index: # Check for missing observations
+            obs = distances[self.index - 1]
+            self.obs = obs
+            self.observe(obs, gameState)
+
+    def initialize(self, gameState):
+        "Initializes beliefs to a uniform distribution over all positions."
+        # The legal positions do not include the ghost prison cells in the bottom left.
+        self.legalPositions = [p for p in gameState.getWalls().asList(False) if p[1] > 1]
+        self.initializeUniformly(gameState)
+
+    ######################################
+    # Methods that need to be overridden #
+    ######################################
+
+    def initializeUniformly(self, gameState):
+        "Sets the belief state to a uniform prior belief over all positions."
+        pass
+
+    def observe(self, observation, gameState):
+        "Updates beliefs based on the given distance observation and gameState."
+        pass
+
+    def elapseTime(self, gameState):
+        "Updates beliefs for a time step elapsing from a gameState."
+        pass
+
+    def getBeliefDistribution(self):
+        """
+        Returns the agent's current belief state, a distribution over ghost
+        locations conditioned on all evidence so far.
+        """
+        pass
+
+        
+class ParticleFilter(InferenceModule):
+    """
+    A particle filter for approximately tracking a single ghost.
+
+    Useful helper functions will include random.choice, which chooses an element
+    from a list uniformly at random, and util.sample, which samples a key from a
+    Counter by treating its values as probabilities.
+    """
+
+    def __init__(self, ghostAgent, numParticles=300):
+        InferenceModule.__init__(self, ghostAgent);
+        self.setNumParticles(numParticles)
+
+    def setNumParticles(self, numParticles):
+        self.numParticles = numParticles
+
+
+    def initializeUniformly(self, gameState):
+        """
+        Initializes a list of particles. Use self.numParticles for the number of
+        particles. Use self.legalPositions for the legal board positions where a
+        particle could be located.  Particles should be evenly (not randomly)
+        distributed across positions in order to ensure a uniform prior.
+
+        Note: the variable you store your particles in must be a list; a list is
+        simply a collection of unweighted variables (positions in this case).
+        Storing your particles as a Counter (where there could be an associated
+        weight with each position) is incorrect and may produce errors.
+        """
+        "*** YOUR CODE HERE ***"
+        #this works I think, but I don't have a way to test. Try it out on paper if you want.
+        numPositions = len(self.legalPositions)
+        #print "legal positions: ",self.legalPositions
+        #print "numPositions: ", numPositions
+        step = (numPositions % self.numParticles) - 1
+        particleList = [None]*self.numParticles #poor attempt at optimization
+        last = step * -1 #ensures start at 0
+        #print "step: ",step
+        
+        for p in range (0, self.numParticles):
+            #print "last: ",last
+            
+            new = last + step
+            #print "new: ", new
+            last = new
+            
+            particleList[p] = (self.legalPositions[new % numPositions])
+            
+        
+        self.particles = particleList
+        #print "Initial distribution: ", particleList
+        return particleList
+
+    def observe(self, observation, gameState, callerIndex):
+        """
+        Update beliefs based on the given distance observation. Make sure to
+        handle the special case where all particles have weight 0 after
+        reweighting based on observation. If this happens, resample particles
+        uniformly at random from the set of legal positions
+        (self.legalPositions).
+
+        A correct implementation will handle two special cases:
+          1) When a ghost is captured by Pacman, all particles should be updated
+             so that the ghost appears in its prison cell,
+             self.getJailPosition()
+
+             As before, you can check if a ghost has been captured by Pacman by
+             checking if it has a noisyDistance of None.
+
+          2) When all particles receive 0 weight, they should be recreated from
+             the prior distribution by calling initializeUniformly. The total
+             weight for a belief distribution can be found by calling totalCount
+             on a Counter object
+
+        util.sample(Counter object) is a helper method to generate a sample from
+        a belief distribution.
+
+        You may also want to use util.manhattanDistance to calculate the
+        distance between a particle and Pacman's position.
+        """
+        noisyDistance = observation
+        #emissionModel = busters.getObservationDistribution(noisyDistance)
+        pacmanPosition = gameState.getAgentPosition(callerIndex)
+        "*** YOUR CODE HERE ***"
+        s = [None]*self.numParticles
+        #print "got observation: ", noisyDistance
+        #Special Case #1: Pacman eats the ghost
+        if noisyDistance == None:
+            for i in range(0, self.numParticles):
+                s[i] = self.getJailPosition()
+            self.particles = s
+            return s
+        
+        
+        #update the beliefs. This step is taking 5ever
+        #print "Updating belief distribution"
+        beliefs = util.Counter()
+        beliefDistribution = self.getBeliefDistribution()
+        for p in self.particles:
+            
+            #weight = emissionModel[util.manhattanDistance(p, pacmanPosition)] * beliefDistribution[p]
+            weight = gameState.getDistanceProb(util.manhattanDistance(p, pacmanPosition), noisyDistance)
+            beliefs[p] = weight
+            #print "given ",p," weight ", weight
+            #beliefs.normalize()
+        
+        #Special Case #2: All particles have 0 weight
+        if beliefs.totalCount() == 0:
+            #print "SPECIAL CASE 2 TRIGGERED"
+             #get the prior distribution. 
+            priorDistribution = util.Counter()
+            for p in self.initializeUniformly(gameState):
+                priorDistribution[p] = 1
+            beliefs = priorDistribution.normalize()
+        
+        #sample from new distribution
+        #print "sampling from new distribution"
+        if beliefs == None:
+            #print "BELIEFS IS NULL"
+            beliefs = util.Counter()
+            for p in self.initializeUniformly(gameState):
+                beliefs[p] = 1
+            beliefs.normalize()
+        
+        #beliefs.normalize()
+        for i in range(0, self.numParticles):
+            s[i] = util.sample(beliefs)
+        
+        #update the particle list
+        self.particles = s
+        return s
+        
+        
+        util.raiseNotDefined()
+
+    def elapseTime(self, gameState):
+        """
+        Update beliefs for a time step elapsing.
+
+        As in the elapseTime method of ExactInference, you should use:
+
+          newPosDist = self.getPositionDistribution(self.setGhostPosition(gameState, oldPos))
+
+        to obtain the distribution over new positions for the ghost, given its
+        previous position (oldPos) as well as Pacman's current position.
+
+        util.sample(Counter object) is a helper method to generate a sample from
+        a belief distribution.
+        """
+        "*** YOUR CODE HERE ***"
+        newList = []
+
+        for oldPos in self.particles:
+            newPosDist = self.getPositionDistribution(self.setGhostPosition(gameState, oldPos))
+            newList.append(util.sample(newPosDist))
+
+        self.particles = newList
+        
+        #util.raiseNotDefined()
+
+    def getBeliefDistribution(self):
+        """
+        Return the agent's current belief state, a distribution over ghost
+        locations conditioned on all evidence and time passage. This method
+        essentially converts a list of particles into a belief distribution (a
+        Counter object)
+        """
+        "*** YOUR CODE HERE ***"
+        beliefs = util.Counter()
+        for p in self.particles:
+            beliefs[p] += 1
+        beliefs.normalize()
+        return beliefs
+      
+def d2lPosReciever(agentIndex, state, position):
+    halfway = state.data.layout.width/2
+    print "AGENT INDEX: ", agentIndex
+    dist = position[0] - halfway
+    
+    if not state.isOnRedTeam(agentIndex):
+        dist *= -1
+    return dist
+        
+def distanceToLine(agentIndex, state):
+    #returns the manhattan distance to the line. Positive if on enemy side, negative if on home side
+    halfway = state.data.layout.width/2
+    #print "AGENT INDEX: ", agentIndex
+    position = state.getAgentPosition(agentIndex)
+    dist = position[0] - halfway
+    
+    if not state.isOnRedTeam(agentIndex):
+        dist *= -1
+    return dist
+       
+        
 class CTFExtractor(FeatureExtractor):
     """
     returns features:
@@ -827,12 +1131,14 @@ class CTFExtractor(FeatureExtractor):
     
         #info gathering
         #food = state.getFood()
+        nextState = state.generateSuccessor(thisAgent.index, action)
+        
         walls = state.getWalls()
         halfway = state.data.layout.width/2
         index = thisAgent.index
         myPosition = state.getAgentPosition(index)
-        distanceToLine = myPosition[0] - halfway
-        score = thisAgent.getScore(state)
+        d2l = myPosition[0] - halfway
+        nextScore = thisAgent.getScore(nextState)
         timeLeft = state.data.timeleft
         
         # compute the location of pacman after he takes the action
@@ -849,7 +1155,6 @@ class CTFExtractor(FeatureExtractor):
             enemyCapsules = state.getBlueCapsules()
             enemies = state.getBlueTeamIndices()
             myTeam = state.getRedTeamIndices()
-            #distanceToLine *= -1
         else: #on blue
             myFood = state.getBlueFood()
             enemyFood = state.getRedFood()
@@ -857,7 +1162,7 @@ class CTFExtractor(FeatureExtractor):
             enemyCapsules = state.getRedCapsules()
             enemies = state.getRedTeamIndices()
             myTeam = state.getBlueTeamIndices()
-            #distanceToLine *= -1
+            d2l *= -1
             
         if myTeam[0] == index:
             teammateIndex = myTeam[1]
@@ -865,36 +1170,48 @@ class CTFExtractor(FeatureExtractor):
             teammateIndex = myTeam[0]
             
         teammatePosition = state.getAgentPosition(teammateIndex)
-        teammateD2L = self.distanceToLine(teammateIndex, state)
+        teammateD2L = distanceToLine(teammateIndex, state)
 
-        #Eric Divided by 10
+
         features["teammate-distance-to-line"] = teammateD2L / 10
 
         d2t = thisAgent.distances.getDistance(myPosition, teammatePosition)
-
-        #Eric divided by 10
         features["distance-to-teammate"] = d2t / 10
             
             
         enemy1Position = state.getAgentPosition(enemies[0])
         if enemy1Position != None:
-            enemy1DistanceToLine = self.distanceToLine(enemies[0], state) #gives manhat distance to line and ghost/pacman in the form of +/-
+            enemy1DistanceToLine = distanceToLine(enemies[0], state) #gives manhat distance to line and ghost/pacman in the form of +/-
+            features["enemy1-distance-to-line"] = enemy1DistanceToLine
+            d2e1 = thisAgent.distances.getDistance(myPosition, enemy1Position)
+            features["distance-to-enemy1"] = d2e1
+            td2e1 = thisAgent.distances.getDistance(teammatePosition, enemy1Position)
+            features["td2e1"] = td2e1
+        else:
+            enemy1Position = thisAgent.pfilters[0].getBeliefDistribution().argMax()
+            enemy1DistanceToLine = d2lPosReciever(enemies[0], state, enemy1Position) #gives manhat distance to line and ghost/pacman in the form of +/-
             features["enemy1-distance-to-line"] = enemy1DistanceToLine
             d2e1 = thisAgent.distances.getDistance(myPosition, enemy1Position)
             features["distance-to-enemy1"] = d2e1
             td2e1 = thisAgent.distances.getDistance(teammatePosition, enemy1Position)
             features["td2e1"] = td2e1
         
-        
         enemy2Position = state.getAgentPosition(enemies[1])
         if enemy2Position != None:
-            enemy2DistanceToLine = self.distanceToLine(enemies[1], state)
+            enemy2DistanceToLine = distanceToLine(enemies[1], state)
             features["enemy2-distance-to-line"] = enemy2DistanceToLine
             d2e2 = thisAgent.distances.getDistance(myPosition, enemy2Position)
             features["distance-to-enemy2"] = d2e2
             td2e2 = thisAgent.distances.getDistance(teammatePosition, enemy2Position)
             features["td2e2"] = td2e2
-            
+        else:
+            enemy2Position = thisAgent.pfilters[0].getBeliefDistribution().argMax()
+            enemy2DistanceToLine = d2lPosReciever(enemies[1], state, enemy2Position) #gives manhat distance to line and ghost/pacman in the form of +/-
+            features["enemy2-distance-to-line"] = enemy1DistanceToLine
+            d2e2 = thisAgent.distances.getDistance(myPosition, enemy1Position)
+            features["distance-to-enemy1"] = d2e2
+            td2e2 = thisAgent.distances.getDistance(teammatePosition, enemy1Position)
+            features["td2e2"] = td2e2    
        
         
         #food logic- distance to nearest food
@@ -902,63 +1219,79 @@ class CTFExtractor(FeatureExtractor):
         if dist is not None:
             # make the distance a number less than one otherwise the update
             # will diverge wildly
-            #Eric multiplied by 10
-            features["closest-food"] = (float(dist) / (walls.width * walls.height)) * 10
+            features["closest-food"] = float(dist) / (walls.width * walls.height) * 10
         #food logic- amount of food carrying
         foodHolding = thisAgent.foodHolding
         features["food-holding"] = foodHolding
         
+        enemy1FoodHolding = thisAgent.foodHoldings[enemies[0]]
+        features["enemy1-food-held"] = enemy1FoodHolding
+        
+        enemy2FoodHolding = thisAgent.foodHoldings[enemies[1]]
+        features["enemy2-food-held"] = enemy2FoodHolding
         
         
-        if distanceToLine < 0:
-            distanceToLine = 0
+        
         #assign to features
-        features["distance-to-line"] = distanceToLine /10
+        features["distance-to-line"] = d2l /10
         
+        features["next-score"] = nextScore
+        
+        features["time-left"] = timeLeft / 1200
 
-
-
+        features["enemy-food-left-after"] = len(thisAgent.getFood(nextState).asList())
+        features["my-food-left-after"] = len(thisAgent.getFoodYouAreDefending(nextState).asList())
 
         #features.divideAll(10.0)
         return features
         
-        
-    def distanceToLine(self, agentIndex, state):
-        #returns the manhattan distance to the line. Positive if on enemy side, negative if on home side --> not actually true anymore -Eric
-        halfway = state.data.layout.width/2
-        
-        dist = abs(state.getAgentPosition(agentIndex)[0] - halfway)
-        #if not state.isOnRedTeam(agentIndex):
-        #    dist *= -1
-        return dist
-
-
-
-
-    
-
-
-
-
 
 
 
 class QCTFAgent(CaptureAgent, ApproximateQAgent):
+    epsilon = .3
+    alpha = 0.5
+    discount = 1
+    featExtractor = CTFExtractor()
+    #statics
+    enemy1FoodHolding = 0
+    enemy2FoodHolding = 0
+    lastState = None
+
+    foodHoldings = [0,0,0,0]
+
+    pfilters = [ParticleFilter(RandomEnemy(a)) for a in range (0,2)]
+
     def registerInitialState(self, gameState):
         #print "PRINT 1"
-        CaptureAgent.registerInitialState(self, gameState)
         self.isRed = gameState.isOnRedTeam(self.index)
-
+        if self.isRed:
+            self.enemyIndices = gameState.getBlueTeamIndices()
+            self.teamIndices = gameState.getRedTeamIndices()
+        else:
+            self.enemyIndices = gameState.getRedTeamIndices()
+            self.teamIndices = gameState.getBlueTeamIndices()
+        
+        if self.index == self.teamIndices[0]:
+            self.myPf = self.pfilters[0]
+        else:
+            self.myPf = self.pfilters[1]
+        
+        CaptureAgent.registerInitialState(self, gameState)
+        
         self.distances = distanceCalculator.Distancer(gameState.data.layout)
         self.distances.getMazeDistances()
-
+        
         self.foodHolding = 0
         self.enemy1FoodHolding = 0
-
-
-        ApproximateQAgent.__init__(self)
-        self.startEpisode()
+        self.enemy2FoodHolding = 0
+        self.lastState = gameState
+        
+        #RUU
+        self.myPf.initialize(gameState)
+        
         #print "PRINT 2"
+
         self.fileName = "testFile" + str(self.index)
         if not os.path.isfile(self.fileName):
             for i in range(0,20):
@@ -970,12 +1303,8 @@ class QCTFAgent(CaptureAgent, ApproximateQAgent):
             self.weights = unpickled
         #print "PRINT 3"
 
-
-
-
         self.initial_food = self.getFood(gameState).count()
         self.initial_defending_food = self.getFoodYouAreDefending(gameState).count()
-
 
 
 
@@ -987,6 +1316,24 @@ class QCTFAgent(CaptureAgent, ApproximateQAgent):
         myState = gameState.getAgentState(self.index)
         myPos = myState.getPosition()
         x1,y1 = myPos
+        lastAgentIndex = (self.index - 1)%4
+        
+        #calculate enemy food holdings
+        dOurFood = len(self.getFoodYouAreDefending(gameState).asList()) - len(self.getFoodYouAreDefending(self.lastState).asList())
+        self.foodHoldings[lastAgentIndex] += dOurFood
+        lastEnemyPosition = gameState.getAgentPosition(lastAgentIndex)
+        if lastEnemyPosition == None:
+            lastEnemyPosition = self.myPf.getBeliefDistribution().argMax()
+        if d2lPosReciever(lastAgentIndex, gameState, lastEnemyPosition) < 0:
+            self.foodHoldings[lastAgentIndex] = 0
+            
+        #RUU
+        
+        self.myPf.elapseTime(gameState)
+        self.myPf.observe(gameState.getAgentDistances()[(self.index - 1) % 4], gameState, self.index)
+        
+        
+        
         #print "MYPOS: ", myPos
         #Agent is in left factory
         if(x1 == 30):
@@ -1018,17 +1365,30 @@ class QCTFAgent(CaptureAgent, ApproximateQAgent):
 
 
         else:
+        
+            
+            
 
             action = ApproximateQAgent.getAction1(self, gameState)
-            
-            nextState = gameState.generateSuccessor(self.index, action)
-            self.update1(gameState, action, nextState, self.getReward(gameState))
-            self.doAction(gameState, action)
             #if self.index == 1:
                 #print "WEIGHTS: ", self.weights
                 #print "MY FEATURES: ", self.myFeats
             #print "Action: ", action
+            
+            originalState = gameState
+            nextState = gameState.generateSuccessor(self.index, action)
+            
+            self.update1(gameState, action, nextState, self.getReward(gameState))
+            self.doAction(gameState, action)
+            
+            dFood = len(self.getFood(originalState).asList()) - len(self.getFood(nextState).asList())
+            self.foodHolding += dFood
+            if distanceToLine(self.index, nextState) < 0:
+                self.foodHolding = 0
+            self.foodHoldings[self.index] = self.foodHolding
+            
             return action
+
 
 
     def getReward(self, state):
@@ -1078,7 +1438,7 @@ class QCTFAgent(CaptureAgent, ApproximateQAgent):
 
 
             else:
-                if len(util.matrixAsList(state.getRedFood())) < len(util.matrixAsList(self.lastState.getRedFood())):
+                if len((state.getRedFood()).asList()) < len((self.lastState.getRedFood()).asList()):
                     reward += 10
                 killScore = 0
                 enemyIndicies = state.getRedTeamIndices()
@@ -1097,7 +1457,7 @@ class QCTFAgent(CaptureAgent, ApproximateQAgent):
                 if x1 > halfway:
                 
                     for enemyIndex in enemyIndicies:
-                        if oldDistances[enemyIndex] == 1:
+                        if prevDistances[enemyIndex] == 1:
                             if x1 != 30 and (newDistances[enemyIndex] > 2 or newDistances[enemyIndex] == 0):
                                 #TODO: Give more score for killing enemy with food
                                 killScore += 100
@@ -1109,10 +1469,12 @@ class QCTFAgent(CaptureAgent, ApproximateQAgent):
             return reward
 
 
-    
+
+
+
+
     def final(self, gameState):
         ApproximateQAgent.final(self, gameState)
-        #ReinforcementAgent.final(self, gameState)
         self.stopEpisode()
 
         toBePickledFile = open(self.fileName, "wb")
