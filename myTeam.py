@@ -281,7 +281,7 @@ class CTFExtractor(FeatureExtractor):
         #assign to features
         features["distance-to-line"] = distanceToLine
         
-        
+        features["next-score"] = score
         
         
     
