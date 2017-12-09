@@ -46,7 +46,7 @@ class Agent:
 
 
 def createTeam(firstIndex, secondIndex, isRed,
-                             first = 'QCTFAgent', second = 'QCTFAgent'):
+                             first = 'OffQCTF', second = 'DefQCTF'):
     """
     This function should return a list of two agents that will form the
     team, initialized using firstIndex and secondIndex as their agent
@@ -1224,6 +1224,8 @@ class CTFExtractor(FeatureExtractor):
                     features["ghosts-busted"] += 1
                 else:
                     features["suicide"] = 1
+            if nextAgentState.isPacman and nextState.getAgentState(g).scaredTimer == 0:
+                features["ghost-proximity"] = 1/(thisAgent.distances.getDistance(myNextPos, ePDict[g]) + 0.00001) ** 2
                     
         for p in ePacmen:
             if not nextAgentState.isPacman and isWithin1Block(ePDict[p], myNextPos):
@@ -1291,8 +1293,8 @@ def isWithin1Block(pos1, pos2):
 
 
 class QCTFAgent(CaptureAgent, ApproximateQAgent):
-    epsilon = .3
-    alpha = 0.5
+    epsilon = .1
+    alpha = 0.3
     discount = 1
     featExtractor = CTFExtractor()
     
@@ -1349,14 +1351,14 @@ class QCTFAgent(CaptureAgent, ApproximateQAgent):
         #print "PRINT 3"
         
         #initial weights
-        """
+        
         self.weights = {"distance-to-teammate" : 0.5, "num-scared-ghosts-1-away" : 0.1, "num-danger-ghosts-1-away" : -10, "ghosts-busted" : 1.5, \
-                        "num-super-pac-1-away" : -5, "num-edible-pac-1-away" : 0.1, "busted" : -7, "suicide" : -15, "pacmen-eaten" : 3, \
-                        "eats-food" : 1, "food-holding" : 0, "enemy1-food-held" : -0.2, "enemy2-food-held": -0.2, "next-score" : 0.2, \
+                        "num-super-pac-1-away" : -5, "num-edible-pac-1-away" : 0.1, "busted" : -7, "suicide" : -150, "pacmen-eaten" : 3, \
+                        "eats-food" : 10, "food-holding" : 0, "enemy1-food-held" : -0.2, "enemy2-food-held": -0.2, "next-score" : 0.2, \
                         "enemy-food-left-after" : -0.1, "my-food-left-after" : 0.2, "distance-to-enemy-capsule" : -0.05, "eats-capsule" : 5, \
-                        "closest-food" : -0.1}
-        """
-        #self.weights["stop"] = -5
+                        "closest-food" : -5}
+        
+        self.weights["stop"] = -5
         print self.weights
         
         
@@ -1452,7 +1454,7 @@ class QCTFAgent(CaptureAgent, ApproximateQAgent):
         #print "self.lastState: ",self.lastState
 
         if not self.lastState is None:
-            reward = (state.getScore() - self.lastState.getScore())*50
+            reward = (state.getScore() - self.lastState.getScore())*100
 
             if state.isOnRedTeam(self.index):
                 print "ENEMY CURRENT FOOD: ",len(state.getBlueFood().asList()) 
@@ -1464,7 +1466,7 @@ class QCTFAgent(CaptureAgent, ApproximateQAgent):
                 myAgentState = state.getAgentState(self.index)
                 #reward += (20 - len(state.getBlueFood().asList())) * 10
                 reward -= (20 - len(state.getRedFood().asList())) * 10
-                reward += myAgentState.numCarrying
+                reward += myAgentState.numCarrying * 50
                 killScore = 0
 
 
@@ -1554,3 +1556,40 @@ class QCTFAgent(CaptureAgent, ApproximateQAgent):
         toBePickledFile = open(self.fileName, "wb")
         pickle.dump(self.weights, toBePickledFile)
         toBePickledFile.close()
+        
+        
+        
+class DefQCTF(QCTFAgent):
+    """
+    weights = {"distance-to-teammate" : 0.5,  \
+                        "num-super-pac-1-away" : -5, "num-edible-pac-1-away" : 0.1, "busted" : -7, "pacmen-eaten" : 3, \
+                        "enemy1-food-held" : -0.2, "enemy2-food-held": -0.2, "next-score" : 0.2, \
+                        "my-food-left-after" : 0.2 \
+                        }
+        
+    weights["stop"] = -5
+    """
+    def registerInitialState(self, gameState):
+        QCTFAgent.registerInitialState(self, gameState)
+        self.weights = {"distance-to-teammate" : 0.5, "num-scared-ghosts-1-away" : 0.0, "num-danger-ghosts-1-away" : 0, "ghosts-busted" : 0, \
+                        "num-super-pac-1-away" : -5, "num-edible-pac-1-away" : 0.6, "busted" : -7, "suicide" : 0, "pacmen-eaten" : 3, \
+                        "eats-food" : 0, "food-holding" : 0, "enemy1-food-held" : -0.2, "enemy2-food-held": -0.2, "next-score" : 0.2, \
+                        "enemy-food-left-after" : 0, "my-food-left-after" : 0.2, "distance-to-enemy-capsule" : 0, "eats-capsule" : 0, \
+                        "closest-food" : 0}
+        
+        self.weights["stop"] = -5
+    
+class OffQCTF(QCTFAgent):
+    def registerInitialState(self, gameState):
+        QCTFAgent.registerInitialState(self, gameState)
+        self.weights = {"distance-to-teammate" : 0.5, "num-scared-ghosts-1-away" : 0.1, "num-danger-ghosts-1-away" : -10, "ghosts-busted" : 1.5, \
+                        "num-super-pac-1-away" : 0, "num-edible-pac-1-away" : 0.0, "busted" : 0, "suicide" : -150, "pacmen-eaten" : 0, \
+                        "eats-food" : 10, "food-holding" : 1, "enemy1-food-held" : 0, "enemy2-food-held": 0, "next-score" : 0.2, \
+                        "enemy-food-left-after" : -0.2, "my-food-left-after" : 0, "distance-to-enemy-capsule" : -0.05, "eats-capsule" : 5, \
+                        "closest-food" : -5, "ghost-proximity" : -1}
+        
+        self.weights["stop"] = -5
+    
+    
+    
+    
